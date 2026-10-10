@@ -6,5 +6,5 @@
 # patch is applied automatically, so do NOT insert this row again in the
 # profile patch (duplicate ids crash the loader).
 - insert:
-    - id: dsh-memory-evolve
-      name: 'dsh-memory-evolve'
+    - id: dsh-memory-evolve-mod
+      name: 'dsh-memory-evolve-mod'

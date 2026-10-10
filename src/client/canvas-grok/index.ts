@@ -47,7 +47,7 @@ export interface RegisterCanvasTabOpts {
 }
 
 /** 本插件在 DSH 样式账本里的归属键（= 包名；见 src/client/style-tag.ts 的说明）。 */
-const STYLE_OWNER = 'dsh-memory-evolve'
+const STYLE_OWNER = 'dsh-memory-evolve-mod'
 
 /**
  * 注入 cg- 前缀样式。已存在则只校正归属，避免热更重复挂。

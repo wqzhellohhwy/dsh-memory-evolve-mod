@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const OWNER = 'dsh-memory-evolve'
+const OWNER = 'dsh-memory-evolve-mod'
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8')
 
 test('样式归属统一入口存在，且归属键等于包名', () => {
@@ -51,7 +51,7 @@ test('src/client 下不再有「裸注入」的 <style>（必须经过 injectOwn
   // 但必须在同一个函数里显式写 data-plugin。
   const canvas = read('src/client/canvas-grok/index.ts')
   assert.match(canvas, /setAttribute\('data-plugin',\s*STYLE_OWNER\)/, '画板样式必须显式打归属')
-  assert.match(canvas, /const STYLE_OWNER = 'dsh-memory-evolve'/, '画板的归属常量必须等于包名')
+  assert.match(canvas, new RegExp(`const STYLE_OWNER = '${OWNER}'`), '画板的归属常量必须等于包名')
 })
 
 test('构建产物 lib/client.js：每个 createElement("style") 都带上了 data-plugin', () => {

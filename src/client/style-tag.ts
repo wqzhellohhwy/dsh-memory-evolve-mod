@@ -39,7 +39,7 @@
  * `stripClientSuffix(registration.id)`，也就是 package.json 的 `name`。
  * 官方插件（如 @deepseek-ai/dsh-client-ui-layout）用的同样是包名。
  */
-export const STYLE_OWNER_ID = 'dsh-memory-evolve'
+export const STYLE_OWNER_ID = 'dsh-memory-evolve-mod'
 
 /** 归属属性名（DSH 账本读的属性）。 */
 const OWNER_ATTR = 'data-plugin'
