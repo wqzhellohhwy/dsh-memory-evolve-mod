@@ -13,6 +13,7 @@
  * （默认中文，与 CoIView 一致），不接全局 locale。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { askConfirm } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView } from './TabGuideView.tsx'
@@ -583,7 +584,7 @@ export function PromptView(props: ConvViewProps & PromptViewProps): JSX.Element 
   const deletePrompt = async (): Promise<void> => {
     if (selectedId === null) return
     const text = say('deleteConfirm').replace('{name}', selected?.name ?? '')
-    if (!window.confirm(text)) return
+    if (!(await askConfirm(text))) return
     try {
       await api(`/memory-evolve/api/prompts/${encodeURIComponent(selectedId)}`, { method: 'DELETE' })
       setSelectedId(null)
@@ -832,7 +833,7 @@ export function PromptView(props: ConvViewProps & PromptViewProps): JSX.Element 
   const removeCategory = async (name: string): Promise<void> => {
     const count = prompts.filter((p) => p.category === name).length
     const hint = count > 0 ? say('categoryMoved').replace('{count}', String(count)) : ''
-    if (!window.confirm(`${say('deleteCategory')}「${name}」？${hint}`)) return
+    if (!(await askConfirm(`${say('deleteCategory')}「${name}」？${hint}`))) return
     try {
       const data = await api<{ removed: boolean; moved: number }>(
         `/memory-evolve/api/prompts/categories/${encodeURIComponent(name)}`,

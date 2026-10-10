@@ -4,3 +4,7 @@ docs-local/
 node_modules/
 lib.bak-0812/
 .dsh/
+# 本地改动/构建留下的备份与半成品（不入库）
+*.bak-*
+*.BROKEN-*
+*.pre-*

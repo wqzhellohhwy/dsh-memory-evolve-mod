@@ -4,6 +4,16 @@
 
 > [English](CHANGELOG.en.md)
 
+## 2026-10-10
+
+### 修复
+
+- **桌面版「点了记忆相关操作后整页 UI 变成没有 CSS 的裸控件」——本插件注入的 `<style>` 缺 `data-plugin` 归属，被 DSH 的客户端样式账本连带删除（根因，阻塞级）**：DSH 的客户端模块系统（`@deepseek-ai/dsh-client-modules`）用 `<style>` 上的 `data-plugin` 维护归属账本——物化一个插件 bundle 之后 `claimStyles(ownerId)` 会**把所有没有该属性的 `<style>` 认领给刚物化的那个插件**，而该插件被 HMR 重载 / 图重组回收时 `removeOwnedStyles(ownerId)` 会**删除 `data-plugin === ownerId` 的全部 `<style>`**。官方客户端插件（`ui-layout` / `ui-conversation` / `ui-theme` …）在 bundle 顶层注入时就写 `tag.dataset.plugin = 包名`，账本因此始终正确；本插件的 11 处注入（`apply()` 里的 10 个 `ctx.effect` + 画板 `injectCanvasStyles()`）只写了自定义标记 `data-*-css`，**没有 `data-plugin`**，于是账本两个方向都错：① 自己的样式成了「无主标签」，会被**随后物化的任意插件**认领走，那个插件一旦重载/回收，这里的样式就被连带删除，而且不会恢复（注入守卫只在标签不存在时才注入，`apply()` 未必再跑）；② 反过来，本插件物化时 `claimStyles` 会把页面上**所有**无主标签（profile 里同类不守约插件的样式）认领到自己名下，本插件一重载就把别人的样式一起删掉。用户看到的就是「点记忆相关操作后整页 UI 变成裸控件」——`<link>` 引入的 shell 基础样式没被删，所以布局骨架还在、控件全变原生外观，最容易被误判成「桌面版渲染坏了」。触发链：任何让插件 bundle 变化的动作（HMR rebuilt；本机 `@dsh-external/dsh-super-injector` 的「热重载」会直接调 `clientModules.rebuilt(name)` 与 `compose()`/`notifyGraphChanged()`）→ 客户端 `entries.reload(id, rev)` → `replace()` → `removeOwnedStyles(id)`。修复：新增 `src/client/style-tag.ts` 作为唯一注入入口 `injectOwnedStyle(markerAttr, css)`——注入即 `setAttribute('data-plugin', 'dsh-memory-evolve')`（= 包名 = Loader 条目 id），命中「标签已存在」分支时若归属被误认领则**抢回**；`src/client/index.ts` 的 10 处 effect 收敛成一行调用，画板模块保持自包含、内联打标；重建 `lib/client.js`（11 处 `createElement("style")` 收敛为 2 处统一入口）。证据：① 对照实验（`node` + 极简 DOM 复刻账本语义，分别跑修复前/后的产物）——修复前 10/10 个注入标签无归属、10/10 会被别的插件认领走；修复后 0/10 无归属、0/10 被认领、10 个归到自己名下、自己重载只删自己那 10 个；② 全量扫描桌面 profile 的 7 个样式注入插件，现全部带归属（本机另外三个同类不守约插件 `dsh-prompt`（5 处）、`@dsh-external/dsh-tool-manager`（1 处）、`@dsh-external/dsh-super-injector`（1 处）已一并补齐源码与产物）。注意这不是本插件独有的问题：**任何在运行时注入 `<style>` 却不写 `data-plugin` 的插件都会污染整页账本**；根治方向是 DSH 侧把 `claimStyles` 从「认领所有无主标签」改成「只认领本次 factory 执行期间新增的标签」。
+
+### 测试
+
+- 新增 `tests/client-style-owner.test.js`（5 例静态护栏）：归属键必须等于 `package.json` 的 `name`；`src/client/index.ts` 不得再出现裸 `createElement('style')` 且 `injectOwnedStyle` 调用 ≥10 处；画板模块必须显式打标且常量等于包名；`lib/client.js` 里**每一个** `createElement("style")` 的上下文都必须带 `data-plugin` 归属；归属键字面量不得被写成带 scope 的形式。已验证：把产物退回修复前版本时该用例必失败，恢复后全绿。
+
 ## 2026-09-28
 
 ### 修复

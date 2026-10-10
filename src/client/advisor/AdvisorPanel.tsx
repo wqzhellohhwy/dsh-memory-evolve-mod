@@ -6,6 +6,7 @@
  * AdvisorPanel 只负责五区 UI；数据与副作用全部由 advisor-store.ts 管理。
  */
 import { Component, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { askConfirm } from '../ask-confirm.ts'
 import { createPortal } from 'react-dom'
 import type { PropsRuntime, Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -672,8 +673,8 @@ export function AdvisorPanel({ store, snapshot, onCollapse }: AdvisorPanelProps)
         type="button"
         className="advisor-new-conversation"
         disabled={snapshot.instructionMutating}
-        onClick={() => {
-        if (window.confirm('新建评审会话将清空评审员的全部上下文与记忆（评审员从零开始）。\n确认后可在第一条指令中告知背景信息。')) {
+        onClick={async () => {
+        if (await askConfirm('新建评审会话将清空评审员的全部上下文与记忆（评审员从零开始）。\n确认后可在第一条指令中告知背景信息。')) {
         void store.resetConversation()
         }
         }}

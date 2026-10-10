@@ -10,6 +10,7 @@
  * 看板与列表共用同一套操作路径（完成/恢复、编辑、删除、快速添加），仅展示层不同。
  */
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { askConfirm } from './ask-confirm.ts'
 import type { ChangeEvent } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -260,10 +261,10 @@ export function TodoView(props: TodoViewProps): JSX.Element {
   }
 
   /** 删除（确认后；列表与看板共用）。 */
-  const removeTodo = (item: TodoItem): void => {
+  const removeTodo = async (item: TodoItem): Promise<void> => {
     if (busy) return
     const snippet = item.text.split('\n')[0].slice(0, 40)
-    if (!window.confirm(t('todo.deleteConfirm', { snippet }))) return
+    if (!(await askConfirm(t('todo.deleteConfirm', { snippet })))) return
     setBusy(true)
     void api<{ ok: boolean }>('/api/todo', {
       method: 'POST',

@@ -28,6 +28,7 @@
  * 中间轮不打星（与官方 turnTail 只渲染轮尾的语义一致）。
  */
 import { createRoot, type Root } from 'react-dom/client'
+import { askAlert, askConfirm } from './ask-confirm.ts'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TurnBookmarkButton } from './TurnBookmarkButton.tsx'
 
@@ -212,20 +213,20 @@ export function createBookmarkInjector(
     // 官方禁用提示替换为 Memory Evolve 增强说明（原生 title 悬浮显示）。
     branch.title = deps.t('bookmark.fork.title')
     branch.setAttribute('aria-label', deps.t('bookmark.fork.title'))
-    branch.addEventListener('click', (event) => {
+    branch.addEventListener('click', async (event) => {
       event.preventDefault()
       event.stopPropagation()
       const parsed = parseAnchorKey(node)
       const sessionId = getSessionId()
       if (parsed === null || sessionId === '') {
-        window.alert(deps.t('bookmark.error', { message: deps.t('bookmark.noSession') }))
+        void askAlert(deps.t('bookmark.error', { message: deps.t('bookmark.noSession') }))
         return
       }
       // 确认弹窗：官方不支持的行为，明确告知后再执行。
       // n 优先展示轮次（assistant-step 锚点 id 自带 turn:step），无则退回 seq。
       const seq = parsed.legacySeq
       const turn = parsed.kind === 'assistant-step' ? turnFromAnchorId(parsed.id) : null
-      if (!window.confirm(deps.t('bookmark.fork.confirm', { n: String(turn ?? seq ?? '?') }))) return
+      if (!(await askConfirm(deps.t('bookmark.fork.confirm', { n: String(turn ?? seq ?? '?') })))) return
       void fetch('/memory-evolve/api/bookmarks/fork', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -239,13 +240,13 @@ export function createBookmarkInjector(
         .then((res) => res.json().catch(() => ({})) as Promise<{ sessionId?: string; error?: string }>)
         .then((data) => {
           if (typeof data.sessionId === 'string') {
-            window.alert(deps.t('bookmark.fork.ok', { id: data.sessionId }))
+            void askAlert(deps.t('bookmark.fork.ok', { id: data.sessionId }))
           } else {
-            window.alert(deps.t('bookmark.error', { message: data.error ?? 'HTTP error' }))
+            void askAlert(deps.t('bookmark.error', { message: data.error ?? 'HTTP error' }))
           }
         })
         .catch((error: Error) => {
-          window.alert(deps.t('bookmark.error', { message: error.message }))
+          void askAlert(deps.t('bookmark.error', { message: error.message }))
         })
     })
   }

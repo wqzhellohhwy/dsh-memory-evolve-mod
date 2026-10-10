@@ -46,12 +46,26 @@ export interface RegisterCanvasTabOpts {
   openSession?: (sessionId: string) => void
 }
 
-/** 注入 cg- 前缀样式。已存在则跳过，避免热更重复挂。 */
+/** 本插件在 DSH 样式账本里的归属键（= 包名；见 src/client/style-tag.ts 的说明）。 */
+const STYLE_OWNER = 'dsh-memory-evolve'
+
+/**
+ * 注入 cg- 前缀样式。已存在则只校正归属，避免热更重复挂。
+ *
+ * `data-plugin` 必须显式写：DSH 的客户端模块系统会把没有该属性的 `<style>`
+ * 认领给随后物化的任意插件（claimStyles），并在那个插件重载/回收时把它们
+ * 一起删掉（removeOwnedStyles）—— 2026-10-10 桌面版「整页变裸控件」的成因之一。
+ */
 function injectCanvasStyles(): () => void {
   if (typeof document === 'undefined') return () => {}
   const existing = document.querySelector(`style[${STYLE_ATTR}]`)
-  if (existing !== null) return () => {}
+  if (existing !== null) {
+    // 曾被误认领 → 抢回归属
+    if (existing.getAttribute('data-plugin') !== STYLE_OWNER) existing.setAttribute('data-plugin', STYLE_OWNER)
+    return () => {}
+  }
   const tag = document.createElement('style')
+  tag.setAttribute('data-plugin', STYLE_OWNER)
   tag.setAttribute(STYLE_ATTR, '1')
   tag.textContent = styles
   document.head.appendChild(tag)

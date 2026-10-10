@@ -56,6 +56,11 @@ import { createNotificationBell } from './notification-bell.tsx'
 import { openSessionCompat } from './client-compat.ts'
 import { createTodoTabLifecycle, RUNTIME_CONFIG_CHANGED } from './todo-tab-lifecycle.js'
 import notificationStyles from './notification-styles.css'
+// 样式标签必须带 data-plugin 归属（DSH claimStyles/removeOwnedStyles 账本）：
+// 缺归属会被别的插件认领走并在它的重载里被删；本插件物化时也会把别人的
+// 无主样式认领过来、自己重载时连带删除 → 表现为整页 UI 变成裸控件。
+// 详见 ./style-tag.ts 的模块注释。
+import { injectOwnedStyle } from './style-tag.ts'
 
 /** Locale namespace owned by this plugin. */
 const NS = 'memory-evolve'
@@ -1761,134 +1766,44 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'memory-evolve: dictionaries')
 
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-memory-evolve-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.memoryEvolveCss = '1'
-    tag.textContent = styles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-memory-evolve-css', styles), 'memory-evolve: stylesheet')
 
   // Skill-browser styles (merged from the standalone dsh-skill-browser
   // plugin): sb- prefixed, injected alongside the panel styles.
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-skill-browser-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.skillBrowserCss = '1'
-    tag.textContent = skillBrowserStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: skill browser stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-skill-browser-css', skillBrowserStyles), 'memory-evolve: skill browser stylesheet')
 
   // COI 调度样式（coi- 前缀，独立注入）。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-coi-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.coiCss = '1'
-    tag.textContent = coiStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: coi stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-coi-css', coiStyles), 'memory-evolve: coi stylesheet')
 
   // 会话广播样式（bb- 前缀，独立注入）。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-broadcast-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.broadcastCss = '1'
-    tag.textContent = broadcastStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: broadcast stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-broadcast-css', broadcastStyles), 'memory-evolve: broadcast stylesheet')
 
   // 提示词样式（pm- 前缀，独立注入）。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-prompt-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.promptCss = '1'
-    tag.textContent = promptStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: prompt stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-prompt-css', promptStyles), 'memory-evolve: prompt stylesheet')
 
   // Web UI 设置样式（ui- 前缀，独立注入）。样式本身无副作用：过滤规则
   // 依赖 html[data-dsh-ui-filter] 属性（session-filter.ts 激活后才设置），
   // 无属性时不生效——因此样式常驻注入（与其他模块样式同款），真正的开关
   // 控制在下方：探测 /api/ui-settings/state 成功才激活筛选与注册 Tab。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-ui-settings-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.uiSettingsCss = '1'
-    tag.textContent = uiSettingsStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: ui-settings stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-ui-settings-css', uiSettingsStyles), 'memory-evolve: ui-settings stylesheet')
 
   // Mermaid 图表渲染样式（me-mermaid- 前缀，独立注入）。样式本身无副作用
   // （.me-mermaid-wrap 只在渲染器替换代码块后出现），常驻注入与 ui-settings
   // 同款；真正的开关控制在下方：探测 /api/ui-settings/state 成功后按
   // mermaidRender 功能开关启停观察器。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-me-mermaid-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.meMermaidCss = '1'
-    tag.textContent = mermaidStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: mermaid stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-me-mermaid-css', mermaidStyles), 'memory-evolve: mermaid stylesheet')
 
   // 会话书签样式（bm- 前缀，独立注入）。样式常驻无副作用；真正开关控制
   // 在下方：探测 /api/bookmarks/state 成功才注册 turnTail 星标与「书签」Tab。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-bookmark-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.bookmarkCss = '1'
-    tag.textContent = bookmarkStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: bookmark stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-bookmark-css', bookmarkStyles), 'memory-evolve: bookmark stylesheet')
 
   // Advisor 悬浮面板样式（advisor- 前缀）：面板本体 portal 到 body，故样式
   // 必须由客户端入口常驻注入，不能依赖某个 conversation.view Tab 的生命周期。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-advisor-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.advisorCss = '1'
-    tag.textContent = advisorStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: advisor stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-advisor-css', advisorStyles), 'memory-evolve: advisor stylesheet')
 
   // web 站内通知铃铛样式（me-notify- 前缀）：铃铛 portal 到 body，样式须由
   // 客户端入口常驻注入（与 advisor 悬浮面板同款，不依赖 Tab 生命周期）。
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const existing = document.querySelector('style[data-notify-css]')
-    if (existing !== null) return () => {}
-    const tag = document.createElement('style')
-    tag.dataset.notifyCss = '1'
-    tag.textContent = notificationStyles
-    document.head.appendChild(tag)
-    return () => { tag.remove() }
-  }, 'memory-evolve: notification stylesheet')
+  ctx.effect(() => injectOwnedStyle('data-notify-css', notificationStyles), 'memory-evolve: notification stylesheet')
 
   // web 站内通知铃铛（全局右上角）：探测宿主端 /api/notifications/unread 成功
   // 才挂载（notifyEnabled 开启时 API 才挂载，关闭时 404 → 铃铛不注入）。

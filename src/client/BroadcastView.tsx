@@ -16,6 +16,7 @@
  * 数据源：/memory-evolve/api/broadcast/*（host 超管 API）+ /api/aliases。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { askConfirm } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView } from './TabGuideView.tsx'
@@ -318,7 +319,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
   const roomListPageItems = filteredRooms.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE)
 
   const deleteMessage = async (msg: Msg): Promise<void> => {
-    if (!window.confirm(t('broadcast.message.deleteConfirm', { subject: msg.subject }))) return
+    if (!(await askConfirm(t('broadcast.message.deleteConfirm', { subject: msg.subject })))) return
     try {
       await fetchJson<{ ok: boolean }>(`/messages/${encodeURIComponent(msg.id)}`, { method: 'DELETE' })
       setNotice({ kind: 'ok', text: t('broadcast.message.deleted') })
@@ -369,7 +370,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
   }
 
   const kickMember = async (room: Room, member: string): Promise<void> => {
-    if (!window.confirm(t('broadcast.room.kickConfirm', { member }))) return
+    if (!(await askConfirm(t('broadcast.room.kickConfirm', { member })))) return
     try {
       await fetchJson<{ ok: boolean }>(`/rooms/${encodeURIComponent(room.id)}/kick`, {
         method: 'POST',
@@ -384,7 +385,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
   }
 
   const dissolveRoom = async (room: Room): Promise<void> => {
-    if (!window.confirm(t('broadcast.room.dissolveConfirm', { name: room.name }))) return
+    if (!(await askConfirm(t('broadcast.room.dissolveConfirm', { name: room.name })))) return
     try {
       const res = await fetchJson<{ ok: boolean; message?: string }>(`/rooms/${encodeURIComponent(room.id)}/dissolve`, { method: 'POST' })
       if (res.ok !== true) {

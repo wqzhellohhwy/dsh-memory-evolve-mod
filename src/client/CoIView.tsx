@@ -7,6 +7,7 @@
  * 由 index.ts 注入）。组件内部自带中英文案（默认中文），不接全局 locale。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { askConfirm } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -786,7 +787,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
   const removeTask = async (id: string): Promise<void> => {
     // 稳定版复审 P1-6：文案里的 {id} 占位符必须替换成真实任务 id，
     // 否则对话框显示字面量 {id}（旧版未替换，用户不知道删的是哪个任务）
-    if (!window.confirm(t('tasks.confirmDelete').replace('{id}', id))) return
+    if (!(await askConfirm(t('tasks.confirmDelete').replace('{id}', id)))) return
     try {
       const res = await deleteJson<{ ok: boolean; message?: string }>(`/tasks/${encodeURIComponent(id)}`)
       if (res.ok !== true) {
@@ -918,7 +919,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
 
   const kill = async (): Promise<void> => {
     if (detail === null) return
-    if (!window.confirm(t('tasks.confirmKill'))) return
+    if (!(await askConfirm(t('tasks.confirmKill')))) return
     try {
       // 稳定版复审 P1-6：先发 force:false——host 对「正在写文件」等任务
       // 会返回确认提示而不是直接终止（跳过它会绕过安全检查）；被拒时
@@ -930,7 +931,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
     } catch (err) {
       // host 要求二次确认时：把确认提示原样透出，再带 force 重发。
       const msg = errText(err)
-      if (window.confirm(msg)) {
+      if (await askConfirm(msg)) {
         try {
           await postJson(`/tasks/${encodeURIComponent(detail.id)}/cancel`, { force: true })
           setNotice({ kind: 'ok', text: t('tasks.killed') })
@@ -1329,7 +1330,7 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
   }
 
   const remove = async (id: string): Promise<void> => {
-    if (!window.confirm(t('sessions.confirmDelete'))) return
+    if (!(await askConfirm(t('sessions.confirmDelete')))) return
     try {
       await deleteJson(`/sessions/${encodeURIComponent(id)}`)
       void load()
@@ -1469,7 +1470,7 @@ function AdaptersPane(): JSX.Element {
   }
 
   const remove = async (id: string): Promise<void> => {
-    if (!window.confirm(t('adapters.confirmDelete'))) return
+    if (!(await askConfirm(t('adapters.confirmDelete')))) return
     try {
       const res = await deleteJson<{ ok: boolean; message?: string }>(`/adapters/${encodeURIComponent(id)}`)
       if (res.ok === false) {
@@ -1890,7 +1891,7 @@ function TemplatesPane(): JSX.Element {
       setNotice({ kind: 'error', text: t('templates.builtinKeep') })
       return
     }
-    if (!window.confirm(t('templates.confirmDelete'))) return
+    if (!(await askConfirm(t('templates.confirmDelete')))) return
     try {
       await deleteJson(`/templates/${encodeURIComponent(id)}`)
       void load()

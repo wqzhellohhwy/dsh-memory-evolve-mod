@@ -21,6 +21,7 @@ import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/clie
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { MemoryQueueView } from './MemoryQueueView.tsx'
 import { TabGuideView, type GuideSection } from './TabGuideView.tsx'
+import { askConfirm } from './ask-confirm.ts'
 
 /**
  * 功能子 tab（记忆专属）：指南 / 待确认记忆建议。
@@ -460,10 +461,10 @@ export function MemoryTabView(props: ConvViewProps & MemoryTabViewProps): JSX.El
    * 删除一条记忆条目：先让用户确认，再把【完整条目原文】交给宿主
    * 精确删除（removeExact，整条相等匹配）——短条目不会误删长条目。
    */
-  const deleteEntry = (entry: MemoryEntry): void => {
+  const deleteEntry = async (entry: MemoryEntry): Promise<void> => {
     if (activeRow === null || deleting) return
     const snippet = entry.text.length > 60 ? `${entry.text.slice(0, 60)}…` : entry.text
-    if (!window.confirm(t('memoryTab.deleteConfirm', { snippet }))) return
+    if (!(await askConfirm(t('memoryTab.deleteConfirm', { snippet })))) return
     setDeleting(true)
     void api<{ ok: boolean }>('/api/memory/delete', {
       method: 'POST',
@@ -488,13 +489,13 @@ export function MemoryTabView(props: ConvViewProps & MemoryTabViewProps): JSX.El
 
   /** 保存正文编辑：只改内容，时间戳/tag 由宿主保留；§ 分隔符输入即过滤。
    *  注入轨（memory/user/key）保存后立即进入模型上下文，需用户确认。 */
-  const saveEdit = (): void => {
+  const saveEdit = async (): Promise<void> => {
     if (editEntryRaw === null || activeRow === null || editSaving) return
     const content = editDraft.trim()
     if (content === '') return
     if (INJECTED_KEYS.has(activeRow.key)) {
       const snippet = content.length > 60 ? `${content.slice(0, 60)}…` : content
-      if (!window.confirm(t('memoryTab.editConfirm', { snippet }))) return
+      if (!(await askConfirm(t('memoryTab.editConfirm', { snippet })))) return
     }
     setEditSaving(true)
     void api<{ ok: boolean }>('/api/memory/update', {
@@ -519,11 +520,11 @@ export function MemoryTabView(props: ConvViewProps & MemoryTabViewProps): JSX.El
    * 文件（不再注入，可随时移回）；archive-* 页签的「移回主记忆」转正。
    * 归档需确认（不再注入会话），转正可逆、直接执行。均传完整条目原文。
    */
-  const moveEntry = (entry: MemoryEntry, op: 'archive' | 'promote'): void => {
+  const moveEntry = async (entry: MemoryEntry, op: 'archive' | 'promote'): Promise<void> => {
     if (activeRow === null || deleting) return
     if (op === 'archive') {
       const snippet = entry.text.length > 60 ? `${entry.text.slice(0, 60)}…` : entry.text
-      if (!window.confirm(t('memoryTab.archiveConfirm', { snippet }))) return
+      if (!(await askConfirm(t('memoryTab.archiveConfirm', { snippet })))) return
     }
     setDeleting(true)
     const path = op === 'archive' ? '/api/memory/archive' : '/api/archive/promote'

@@ -15,6 +15,7 @@
  * 若目标在未加载的历史窗口，循环点「加载更早」按钮（loadOlder）再定位。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { askConfirm, askPrompt } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView, type GuideSection } from './TabGuideView.tsx'
@@ -245,8 +246,8 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
       .finally(() => setBusy(false))
   }
 
-  const onRename = (bm: Bookmark): void => {
-    const input = window.prompt(t('bookmark.prompt.rename'), bm.label)
+  const onRename = async (bm: Bookmark): Promise<void> => {
+    const input = await askPrompt(t('bookmark.prompt.rename'), bm.label)
     if (input === null) return
     const label = input.trim()
     if (label === '') return
@@ -265,8 +266,8 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
       .finally(() => setBusy(false))
   }
 
-  const onDelete = (bm: Bookmark): void => {
-    if (!window.confirm(t('bookmark.confirm.delete', { label: bm.label }))) return
+  const onDelete = async (bm: Bookmark): Promise<void> => {
+    if (!(await askConfirm(t('bookmark.confirm.delete', { label: bm.label })))) return
     setBusy(true)
     void api<{ ok: boolean }>('', {
       method: 'DELETE',
@@ -283,8 +284,8 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
   }
 
   /** 从此书签的轮次创建官方分支会话（用户拍板本期实现）。 */
-  const onFork = (bm: Bookmark): void => {
-    if (!window.confirm(t('bookmark.fork.confirm', { n: String(bm.turn ?? bm.seq) }))) return
+  const onFork = async (bm: Bookmark): Promise<void> => {
+    if (!(await askConfirm(t('bookmark.fork.confirm', { n: String(bm.turn ?? bm.seq) })))) return
     setBusy(true)
     setNotice({ kind: 'info', text: t('bookmark.fork.working') })
     void fetch('/memory-evolve/api/bookmarks/fork', {

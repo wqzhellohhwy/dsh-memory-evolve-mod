@@ -19,6 +19,8 @@
  * 切换后组件不重渲染也能拿到最新会话 id），书签 Tab 传字符串。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+
+import { askAlert } from './ask-confirm.ts'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** 单条书签（与宿主 API 对齐的最小字段）。 */
@@ -103,15 +105,15 @@ export function TurnBookmarkButton(props: TurnBookmarkButtonProps): JSX.Element 
   /** 默认标签名：轮次 N（turn 优先；老格式只有 seq；都没有则显示 ?）。 */
   const defaultLabel = t('bookmark.defaultLabel', { n: String(turn ?? seq ?? '?') })
 
-  const createOrRename = (mode: 'create' | 'rename'): void => {
+  const createOrRename = async (mode: 'create' | 'rename'): Promise<void> => {
     const sessionId = resolveSessionId(props.sessionId)
     if (!sessionId) {
-      window.alert(t('bookmark.error', { message: t('bookmark.noSession') }))
+      void askAlert(t('bookmark.error', { message: t('bookmark.noSession') }))
       return
     }
     const initial = mode === 'rename' && bookmark !== null ? bookmark.label : defaultLabel
     // window.prompt：零依赖、不抢 DSH 弹层体系；失败（Esc）则取消。
-    const input = window.prompt(
+    const input = await askPrompt(
       mode === 'rename' ? t('bookmark.prompt.rename') : t('bookmark.prompt.create'),
       initial,
     )
@@ -136,7 +138,7 @@ export function TurnBookmarkButton(props: TurnBookmarkButtonProps): JSX.Element 
           window.dispatchEvent(new CustomEvent('dsh-memory-evolve:bookmarks-change'))
         })
         .catch((error: Error) => {
-          window.alert(t('bookmark.error', { message: error.message }))
+          void askAlert(t('bookmark.error', { message: error.message }))
         })
         .finally(() => setBusy(false))
     } else if (bookmark !== null) {
@@ -154,7 +156,7 @@ export function TurnBookmarkButton(props: TurnBookmarkButtonProps): JSX.Element 
           window.dispatchEvent(new CustomEvent('dsh-memory-evolve:bookmarks-change'))
         })
         .catch((error: Error) => {
-          window.alert(t('bookmark.error', { message: error.message }))
+          void askAlert(t('bookmark.error', { message: error.message }))
         })
         .finally(() => setBusy(false))
     } else {
@@ -162,10 +164,10 @@ export function TurnBookmarkButton(props: TurnBookmarkButtonProps): JSX.Element 
     }
   }
 
-  const remove = (): void => {
+  const remove = async (): Promise<void> => {
     const sessionId = resolveSessionId(props.sessionId)
     if (bookmark === null) return
-    if (!window.confirm(t('bookmark.confirm.delete', { label: bookmark.label }))) return
+    if (!(await askConfirm(t('bookmark.confirm.delete', { label: bookmark.label })))) return
     setBusy(true)
     setMenuOpen(false)
     void api<{ ok: boolean }>('', {
@@ -177,7 +179,7 @@ export function TurnBookmarkButton(props: TurnBookmarkButtonProps): JSX.Element 
         window.dispatchEvent(new CustomEvent('dsh-memory-evolve:bookmarks-change'))
       })
       .catch((error: Error) => {
-        window.alert(t('bookmark.error', { message: error.message }))
+        void askAlert(t('bookmark.error', { message: error.message }))
       })
       .finally(() => setBusy(false))
   }
