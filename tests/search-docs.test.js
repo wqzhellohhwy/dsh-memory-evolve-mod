@@ -17,6 +17,7 @@ import {
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 快速构造一个已解析的插件配置。 */
@@ -64,8 +65,8 @@ test('defaultRoots：始终包含主目录；darwin 包含 /Volumes', () => {
   const roots = defaultRoots('darwin')
   assert.ok(roots.length >= 1)
   assert.ok(roots.includes(homedir()))
-  // darwin 上真实 /Volumes 存在
-  assert.ok(existsSync('/Volumes'))
+  // darwin 上真实 /Volumes 存在（本机非 macOS 时该目录不存在，不做跨平台断言）
+  if (process.platform === 'darwin') assert.ok(existsSync('/Volumes'))
   const winRoots = defaultRoots('win32')
   // PR #32（全盘搜索卡死修复）：win32 只收集「探测存在」的盘符——home 所在
   // 盘只扫 homedir（不含 C:\Windows 等系统目录），其余盘加盘符根。macOS
@@ -76,11 +77,17 @@ test('defaultRoots：始终包含主目录；darwin 包含 /Volumes', () => {
 test('resolveProviders：auto 按平台排序并探测（本机 darwin → mdfind 优先）', () => {
   const chain = resolveProviders(baseConfig(), 'darwin')
   const names = chain.map((p) => p.name)
-  assert.ok(names[0] === 'mdfind', `期望 mdfind 优先，实际 ${names.join(',')}`)
+  // 平台参数只决定**候选顺序**，可用性仍按本机真实环境探测（mdfind 只在 macOS
+  // 可用、rg 需已安装）——「mdfind 优先」这条只在真 macOS 上成立。
+  if (process.platform === 'darwin') assert.ok(names[0] === 'mdfind', `期望 mdfind 优先，实际 ${names.join(',')}`)
   assert.ok(names.includes('walk'))
   // 显式顺序
-  const explicit = resolveProviders(baseConfig({ searchDocsProviders: ['rg', 'walk'] }), 'darwin')
-  assert.deepEqual(explicit.map((p) => p.name), ['rg', 'walk'])
+  // 显式顺序照给定次序保留**可用的**（本机没装 rg 时只剩 walk）；
+  // 关键是：未列出的 provider 不得混进来，且顺序不被重排。
+  const explicitNames = resolveProviders(baseConfig({ searchDocsProviders: ['rg', 'walk'] }), 'darwin').map((p) => p.name)
+  assert.ok(explicitNames.includes('walk'), `walk 必在，实际 ${explicitNames.join(',')}`)
+  assert.ok(!explicitNames.includes('mdfind'), `未列出的 provider 不得出现，实际 ${explicitNames.join(',')}`)
+  if (explicitNames.includes('rg')) assert.deepEqual(explicitNames, ['rg', 'walk'])
   // 未知 provider 报错
   assert.throws(() => resolveProviders(baseConfig({ searchDocsProviders: ['nope'] }), 'darwin'))
 })
@@ -159,7 +166,7 @@ test('renderSearchResult：命中/空/错误三种形态', () => {
 })
 
 test('walk provider：临时目录真实扫描 + 忽略目录 + query 过滤', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-test-'))
+  const dir = tmproot("sd-test-")
   try {
     mkdirSync(join(dir, 'docs'))
     mkdirSync(join(dir, 'docs', 'node_modules'))
@@ -219,7 +226,11 @@ test('控制器：启用注册、禁用注销、状态', () => {
   assert.equal(registered?.name, 'memory_evolve_search_local_files', '启用后注册工具')
   const status = ctrl.status()
   assert.equal(status.enabled, true)
-  assert.deepEqual(status.providers, ['mdfind', 'rg', 'walk'])
+  // provider 可用性按本机真实环境探测，跨平台恒成立的只有：非空 + walk 兜底在最后；
+  // 真 macOS 上再断言完整顺序（mdfind 优先、rg 次之）。
+  assert.ok(status.providers.length >= 1, `至少一个 provider，实际 ${status.providers.join(',')}`)
+  assert.equal(status.providers.at(-1), 'walk', `walk 必须是最终兜底，实际 ${status.providers.join(',')}`)
+  if (process.platform === 'darwin') assert.deepEqual(status.providers, ['mdfind', 'rg', 'walk'])
   enabled = false
   ctrl.sync()
   assert.equal(registered, null, '禁用后注销工具')
@@ -273,7 +284,7 @@ test('contentCandidateLimit：扩容且封顶', () => {
 })
 
 test('内容模式候选不按 mtime 截断（防回归：全盘 md 10613 个、目标排 500 名外被截掉的事故）', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-no-truncate-'))
+  const dir = tmproot("sd-no-truncate-")
   try {
     // 600 个候选：599 个"较新"空文件 + 目标文件（含关键词、mtime 最旧）。
     // 旧逻辑（内容候选上限 500 + mtime 排序截断）会漏掉目标——必须枚举全量。
@@ -351,7 +362,7 @@ test('parseRgContentOutput：解析 rg --json 命中与上下文', () => {
 })
 
 test('probeContentFile：二进制 / 空文件 / 正常文本', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-probe-'))
+  const dir = tmproot("sd-probe-")
   try {
     const textPath = join(dir, 'ok.md')
     const binPath = join(dir, 'bin.dat')
@@ -369,7 +380,7 @@ test('probeContentFile：二进制 / 空文件 / 正常文本', () => {
 })
 
 test('nodeSearchFileContents：命中 / 未命中 / 跳过二进制', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-node-content-'))
+  const dir = tmproot("sd-node-content-")
   try {
     const hit = join(dir, 'hit.md')
     const miss = join(dir, 'miss.md')
@@ -409,7 +420,7 @@ test('工具 execute：content=false 行为不变（不返回 snippets）', asyn
 })
 
 test('工具 execute：content=true 命中与片段返回', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-tool-content-'))
+  const dir = tmproot("sd-tool-content-")
   try {
     const f1 = join(dir, 'alpha.md')
     const f2 = join(dir, 'beta.md')
@@ -444,7 +455,7 @@ test('工具 execute：content=true 命中与片段返回', async () => {
 })
 
 test('工具 execute：contentQuery 覆盖 query，并隐式开启内容检索', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-tool-cq-'))
+  const dir = tmproot("sd-tool-cq-")
   try {
     const f = join(dir, 'note.md')
     writeFileSync(f, '正文提到 成都 与项目规划。\n')
@@ -473,7 +484,7 @@ test('工具 execute：contentQuery 覆盖 query，并隐式开启内容检索',
 })
 
 test('工具 execute：内容未命中返回空 results', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-tool-miss-'))
+  const dir = tmproot("sd-tool-miss-")
   try {
     const f = join(dir, 'empty-hit.md')
     writeFileSync(f, '完全无关的文字\n')
@@ -492,7 +503,7 @@ test('工具 execute：内容未命中返回空 results', async () => {
 })
 
 test('工具 execute：大文件与二进制安全跳过', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-tool-safe-'))
+  const dir = tmproot("sd-tool-safe-")
   try {
     const bin = join(dir, 'photo.bin')
     const big = join(dir, 'huge.md')
@@ -581,7 +592,7 @@ test('工具 schema：content 相关参数与 output 字段合法（type 单一�
 })
 
 test('searchFileContents preferNode：强制 Node 路径可命中', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-prefer-node-'))
+  const dir = tmproot("sd-prefer-node-")
   try {
     const f = join(dir, 'doc.md')
     writeFileSync(f, 'force node path KEYWORD_XYZ\n')
@@ -602,7 +613,7 @@ test('searchFileContents preferNode：强制 Node 路径可命中', async () => 
 // ---------------------------------------------------------------------------
 
 test('mode=filename：content/contentQuery 参数被忽略（不读任何文件内容）', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-mode-filename-'))
+  const dir = tmproot("sd-mode-filename-")
   try {
     const f = join(dir, 'target.md')
     writeFileSync(f, '含 目标词X 的内容\n')
@@ -625,7 +636,7 @@ test('mode=filename：content/contentQuery 参数被忽略（不读任何文件�
 })
 
 test('mode=content：强制内容检索，query 视为内容关键词、文件名过滤停用', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sd-mode-content-'))
+  const dir = tmproot("sd-mode-content-")
   try {
     const f = join(dir, '任意文件名.md')
     writeFileSync(f, '正文含 关键内容词Y\n')

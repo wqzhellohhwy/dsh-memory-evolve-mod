@@ -284,24 +284,3 @@
   color: var(--dsw-static-red-9, #e5484d);
 }
 
-.bm-notice {
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.bm-notice-ok {
-  background: color-mix(in srgb, var(--dsw-static-green-9, #30a46c) 14%, transparent);
-  color: var(--dsw-static-green-11, #18794e);
-}
-
-.bm-notice-error {
-  background: color-mix(in srgb, var(--dsw-static-red-9, #e5484d) 14%, transparent);
-  color: var(--dsw-static-red-11, #c62a2f);
-}
-
-.bm-notice-info {
-  background: color-mix(in srgb, var(--dsw-static-blue-9, #3b82f6) 14%, transparent);
-  color: var(--dsw-static-blue-11, #1d4ed8);
-}

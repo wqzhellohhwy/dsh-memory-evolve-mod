@@ -23,6 +23,7 @@ import { resolveProjectId } from '../lib/sync/identity.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -34,7 +35,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-reg-'))
+  return tmproot("dsh-sync-reg-")
 }
 
 function clean(dir) {
@@ -125,9 +126,15 @@ test('ArchiveStore：key 归档与主轨同一项目目录（resolver 生效）'
     const archive = new ArchiveStore(dir, { projectDirResolver: () => projectDir })
     const r = archive.append('key', '[2026-08-10] 归档条目', '/work/x')
     assert.equal(r.ok, true)
-    // 归档文件在项目目录（resolver 指定的），而不是默认 hash 目录
-    assert.ok(existsSync(join(projectDir, 'KEY-archive.md')))
-    assert.ok(!existsSync(join(dir, 'projects', '2a3132d1d2c1', 'KEY-archive.md')), '默认 hash 目录不应出现归档')
+    // v3 布局：归档是 `memory/<组id>/archive/project/<项目id>/…`（项目 id 取
+    // resolver 目录末段），不再落在项目目录下的 `archive/<组id>/`。
+    const archiveDir = join(dir, 'memory', 'key', 'archive', 'project', 'aaaaaaaaaaaa')
+    assert.ok(existsSync(archiveDir), '归档应落在 v3 分组归档目录下')
+    assert.ok(readdirSync(archiveDir).some((name) => name.endsWith('.md')), '归档目录里应有条目文件')
+    assert.ok(
+      !existsSync(join(dir, 'memory', 'key', 'archive', 'project', '2a3132d1d2c1')),
+      '默认 hash 项目不应出现归档',
+    )
   } finally {
     clean(dir)
   }

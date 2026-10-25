@@ -5,9 +5,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
+import { tmproot } from './_tmp.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-review-tools-test-'))
+  return tmproot("dsh-memory-review-tools-test-")
 }
 
 function once(fn) {

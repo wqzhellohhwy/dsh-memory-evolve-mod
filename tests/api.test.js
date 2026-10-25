@@ -1,20 +1,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ArchiveStore, MemoryStore, SuggestionQueue, isCanonical } from '../lib/store.js'
+import { ArchiveStore, MemoryStore, SuggestionQueue } from '../lib/store.js'
 import { installApi } from '../lib/api.js'
 import { validateRuntimePatch } from '../lib/index.js'
 import { TodoStore } from '../lib/todo.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-api-test-'))
+  return tmproot("dsh-memory-api-test-")
 }
 
 /** Boot a real HTTP server over installApi's handler. */
@@ -168,13 +169,13 @@ test('api memory/key writes a key fact for the session cwd', async () => {
     // empty content → 400
     const empty = await api.request('POST', '/memory-evolve/api/memory/key', { sessionId: 'abc', content: '   ' })
     assert.equal(empty.status, 400)
-    // happy path: appended to the project KEY.md with a program stamp
+    // happy path: 写进项目 key 分组目录（<项目目录>/key/<标题>.md），带程序时间戳
     const ok = await api.request('POST', '/memory-evolve/api/memory/key', { sessionId: 'abc', content: '本项目约定使用 pnpm' })
     assert.equal(ok.status, 200)
     assert.equal(ok.data.ok, true)
     const entries = api.store.entriesOf('key', { session: { header: { cwd: '/work/p' } } })
     assert.equal(entries.length, 1)
-    assert.match(entries[0], /^\[\d{4}-\d{2}-\d{2}\] 本项目约定使用 pnpm$/)
+    assert.match(entries[0], /^\[id:[0-9a-f]{8}\] \[\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\] 本项目约定使用 pnpm$/)
     // optional branches scope the entry
     const scoped = await api.request('POST', '/memory-evolve/api/memory/key', {
       sessionId: 'abc', content: 'dev 专属约定', branches: ['dev'],
@@ -182,13 +183,13 @@ test('api memory/key writes a key fact for the session cwd', async () => {
     assert.equal(scoped.status, 200)
     const tagged = api.store.entriesOf('key', { session: { header: { cwd: '/work/p' } } })
       .find((e) => e.includes('dev 专属约定'))
-    assert.match(tagged, /^\[\d{4}-\d{2}-\d{2}\] \[branch:dev\] dev 专属约定$/)
+    assert.match(tagged, /^\[id:[0-9a-f]{8}\] \[\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\] \[branch:dev\] dev 专属约定$/)
     // invalid branches shape → 400
     const badShape = await api.request('POST', '/memory-evolve/api/memory/key', {
       sessionId: 'abc', content: 'x', branches: 'dev',
     })
     assert.equal(badShape.status, 400)
-    // the memory-files listing exposes the new KEY.md row
+    // the memory-files listing exposes the key group row with the new content
     const list = await api.request('GET', '/memory-evolve/api/memory-files?sessionId=abc')
     const byKey = Object.fromEntries(list.data.files.map((f) => [f.key, f]))
     assert.equal(byKey.key.content.includes('本项目约定使用 pnpm'), true)
@@ -205,7 +206,7 @@ test('api memory/memory and memory/user write global tracks without a cwd', asyn
     // empty content → 400
     const empty = await api.request('POST', '/memory-evolve/api/memory/memory', { content: '   ' })
     assert.equal(empty.status, 400)
-    // happy path: stamped into the global MEMORY.md / USER.md (issue #30)
+    // happy path: 写进全局类的 memory / user 分组目录（issue #30）
     const mem = await api.request('POST', '/memory-evolve/api/memory/memory', {
       content: '公司内部 Nexus 仓库：nexus.cdyh.local',
     })
@@ -213,10 +214,16 @@ test('api memory/memory and memory/user write global tracks without a cwd', asyn
     assert.equal(mem.data.ok, true)
     const user = await api.request('POST', '/memory-evolve/api/memory/user', { content: '回复默认用中文' })
     assert.equal(user.status, 200)
-    const memText = readFileSync(join(api.dir, 'MEMORY.md'), 'utf8')
-    const userText = readFileSync(join(api.dir, 'USER.md'), 'utf8')
-    assert.match(memText, /^\[20\d\d-\d\d-\d\d\] 公司内部 Nexus 仓库：nexus\.cdyh\.local$/m)
-    assert.match(userText, /^\[20\d\d-\d\d-\d\d\] 回复默认用中文$/m)
+    // v2：全局类落 <memoryDir>/global/<组id>/<标题>.md（一条记忆一个 md）
+    const memFiles = readdirSync(join(api.dir, 'global', 'memory'))
+    const userFiles = readdirSync(join(api.dir, 'global', 'user'))
+    assert.equal(memFiles.length, 1)
+    assert.equal(userFiles.length, 1)
+    const memText = readFileSync(join(api.dir, 'global', 'memory', memFiles[0]), 'utf8')
+    const userText = readFileSync(join(api.dir, 'global', 'user', userFiles[0]), 'utf8')
+    assert.match(memText, /^id: [0-9a-f]{8}$/m)
+    assert.match(memText, /\n公司内部 Nexus 仓库：nexus\.cdyh\.local\n$/)
+    assert.match(userText, /\n回复默认用中文\n$/)
     // duplicate content is reported, not appended twice
     const dup = await api.request('POST', '/memory-evolve/api/memory/memory', {
       content: '公司内部 Nexus 仓库：nexus.cdyh.local',
@@ -295,7 +302,7 @@ test('api approve with empty contents falls back to the suggested content', asyn
 test('api approve with a target override re-classifies the suggestion', async () => {
   const api = await bootApi({ resolveCwd: (sessionId) => (sessionId === 'abc' ? '/work/p' : undefined) })
   try {
-    // 建议（带 cwd）→ 覆盖到 key 轨写入该项目 KEY.md
+    // 建议（带 cwd）→ 覆盖到 key 轨，写进该项目的 key 分组目录
     api.queue.append({ time: 't', target: 'memory', content: '这本该是项目事实', reason: 'r', cwd: '/work/p' })
     const res = await api.request('POST', '/memory-evolve/api/suggestions/approve', {
       indices: [1],
@@ -416,7 +423,7 @@ test('api memory/update edits only the body, keeps stamps, rejects §', async ()
     })
     assert.equal(res.status, 200)
     const keyAfter = api.store.entriesOf('key', agent)[0]
-    assert.match(keyAfter, /^\[\d{4}-\d{2}-\d{2}\] \[branch:main\] 修订后的项目事实$/)
+    assert.match(keyAfter, /^\[id:[0-9a-f]{8}\] \[\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\] \[branch:main\] 修订后的项目事实$/)
 
     // 校验：§ 拒绝 / 空内容拒绝 / 无效轨 / 无 cwd 的项目轨 / 未匹配条目
     const now = api.store.entriesOf('memory')[0]
@@ -440,9 +447,13 @@ test('api memory/update edits only the body, keeps stamps, rejects §', async ()
       sessionId: 'abc', target: 'memory', match: '[2026-08-06] 不存在', content: 'x',
     })
     assert.equal(missing.status, 400)
-    // 文件仍为规范 § 格式
-    const raw = readFileSync(join(api.dir, 'MEMORY.md'), 'utf8')
-    assert.equal(isCanonical(raw), true)
+    // 落盘是分片文件（v2 不再有整组 MEMORY.md）：frontmatter + 正文
+    const memDirFiles = readdirSync(join(api.dir, 'global', 'memory'))
+    assert.deepEqual(memDirFiles, ['修订后的全局事实.md'])
+    const raw = readFileSync(join(api.dir, 'global', 'memory', memDirFiles[0]), 'utf8')
+    assert.match(raw, /^---\n/)
+    assert.match(raw, /^id: [0-9a-f]{8}$/m)
+    assert.match(raw, /\n修订后的全局事实\n$/)
   } finally {
     await api.close()
     rmSync(api.dir, { recursive: true, force: true })
@@ -485,7 +496,10 @@ test('api memory/delete removes entries exactly across every track', async () =>
     assert.equal(api.store.entriesOf('key', agent).length, 0)
     // archive tracks map onto memory/user
     api.archive.append('memory', '[2026-08-06] 归档条目 A')
-    res = await api.request('POST', '/memory-evolve/api/memory/delete', { target: 'archive-memory', match: '[2026-08-06] 归档条目 A' })
+    // F-6：文本视图戳精确到分钟（`[2026-08-06]` 读回来就是 `[2026-08-06 00:00]`），
+    // 匹配文本必须取归档自己的原文（真实调用方 = 记忆 Tab 回传的那份）。
+    const archivedA = api.archive.entriesOf('memory')[0]
+    res = await api.request('POST', '/memory-evolve/api/memory/delete', { target: 'archive-memory', match: archivedA })
     assert.equal(res.status, 200)
     assert.equal(api.archive.entriesOf('memory').length, 0)
     // validation: unknown target / empty match / missing entry
@@ -554,7 +568,7 @@ test('api key archive round-trip: archive main-track key entry, promote back', a
     const agent = { session: { header: { cwd: '/work/p' } } }
     api.store.add('key', '需要暂停注入的项目事实', agent)
     const entry = api.store.entriesOf('key', agent)[0]
-    // archive the key entry → KEY.md loses it, KEY-archive.md gains it
+    // archive the key entry → 主轨 key 分组目录少一条，归档目录（archive/key/）多一条
     let res = await api.request('POST', '/memory-evolve/api/memory/archive', {
       sessionId: 'abc', target: 'key', match: entry,
     })
@@ -565,7 +579,7 @@ test('api key archive round-trip: archive main-track key entry, promote back', a
     res = await api.request('GET', '/memory-evolve/api/archive?sessionId=abc')
     assert.equal(res.status, 200)
     assert.ok(res.data.entries.some((e) => e.target === 'key' && e.content.includes('需要暂停注入的项目事实')))
-    // promote back → KEY.md restored, archive emptied
+    // promote back → 主轨恢复，归档目录清空
     res = await api.request('POST', '/memory-evolve/api/archive/promote', {
       sessionId: 'abc', target: 'key', match: entry,
     })
@@ -685,4 +699,42 @@ test('searchDocsMode：校验合法枚举，null=未设置合法，非法值拒�
   }
   assert.throws(() => validateRuntimePatch('searchDocsMode', 'everything'), /searchDocsMode/)
   assert.throws(() => validateRuntimePatch('searchDocsMode', 1), /searchDocsMode/)
+})
+
+test('归档：任意记忆分组都能归档 / 列出 / 移回（kb 等曾被三轨白名单挡住）', async () => {
+  // 回归背景（用户实测"归档按钮不见了"）：前端按钮白名单、host 的 target 校验、
+  // 归档页的数据源三处都硬编码了分组化之前的 memory / user / key，导致 kb 之类
+  // 分组的条目只剩「编辑 / 删除」，归档后也在归档页看不到。
+  const api = await bootApi()
+  try {
+    const added = api.store.addEntry('kb', { body: '知识库待归档条目' })
+    assert.equal(added.ok, true)
+    const raw = api.store.entriesOf('kb').find((text) => text.includes('知识库待归档条目'))
+    assert.ok(raw, '前置条件：kb 里应有这条')
+
+    // 1) 归档：host 必须接受 kb（此前直接 400）
+    const archived = await api.request('POST', '/memory-evolve/api/memory/archive', { target: 'kb', match: raw })
+    assert.equal(archived.status, 200)
+    assert.equal(api.store.entriesOf('kb').some((text) => text.includes('知识库待归档条目')), false)
+
+    // 2) 归档页必须列出它（此前只列 memory/user/key 三轨）
+    const listed = await api.request('GET', '/memory-evolve/api/archive')
+    assert.equal(listed.status, 200)
+    assert.ok(
+      listed.data.entries.some((row) => row.target === 'kb' && row.content.includes('知识库待归档条目')),
+      '归档页应列出 kb 的归档条目',
+    )
+
+    // 3) 移回主轨同样支持 kb
+    const promoted = await api.request('POST', '/memory-evolve/api/archive/promote', { target: 'kb', match: '知识库待归档条目' })
+    assert.equal(promoted.status, 200)
+    assert.equal(api.store.entriesOf('kb').some((text) => text.includes('知识库待归档条目')), true)
+
+    // 4) 真正的无效 target 仍被拒
+    const bad = await api.request('POST', '/memory-evolve/api/memory/archive', { target: '不存在的分组', match: 'x' })
+    assert.equal(bad.status, 400)
+  } finally {
+    await api.close()
+    rmSync(api.dir, { recursive: true, force: true })
+  }
 })

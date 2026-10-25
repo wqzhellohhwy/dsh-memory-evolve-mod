@@ -17,6 +17,7 @@ import { askConfirm } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView } from './TabGuideView.tsx'
+import { toast } from './Toast.tsx'
 
 /** 提示词条目（与 host 端 PromptStore 一致）。 */
 interface Prompt {
@@ -184,6 +185,7 @@ const DICT = {
     categoryExists: '分类「{name}」已存在，已为你选中',
     categoryRenamed: '已重命名「{from}」→「{to}」{renamed}',
     categoryRenamedSuffix: '，{count} 条提示词已同步',
+    'toast.close': '关闭提示',
   },
   en: {
     // "Guide" sub-tab: detailed introduction of the prompt injection feature.
@@ -309,6 +311,7 @@ const DICT = {
     categoryExists: 'Category "{name}" already exists — selected',
     categoryRenamed: 'Renamed "{from}" → "{to}"{renamed}',
     categoryRenamedSuffix: ', {count} prompts updated',
+    'toast.close': 'Dismiss',
   },
 } as const
 
@@ -435,7 +438,6 @@ export function PromptView(props: ConvViewProps & PromptViewProps): JSX.Element 
   const [showInjections, setShowInjections] = useState(false)
   const [showSources, setShowSources] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   /** 注入参数输入框文本（自由数字；'' 表示未输入，解析时回默认）。 */
   const [roundsText, setRoundsText] = useState('0') // 默认无限次
   const [everyText, setEveryText] = useState('1') // 默认每回合
@@ -474,8 +476,7 @@ export function PromptView(props: ConvViewProps & PromptViewProps): JSX.Element 
     setError(errText(err))
   }, [])
   const showNotice = useCallback((text: string): void => {
-    setNotice(text)
-    window.setTimeout(() => setNotice(null), 4000)
+    toast('ok', text, say('toast.close'))
   }, [])
 
   const load = useCallback(async (): Promise<void> => {
@@ -945,13 +946,11 @@ export function PromptView(props: ConvViewProps & PromptViewProps): JSX.Element 
         <button type="button" className="pm-primary-btn" onClick={startCreate}>{say('new')}</button>
       </div>
 
-      {/* 顶栏消息（错误 / 提示） */}
-      {(error !== null || notice !== null) && (
-        <div className={`pm-banner ${error !== null ? 'pm-banner-error' : ''}`}>
-          {error !== null ? error : notice}
-          {error !== null && (
-            <button type="button" className="pm-banner-close" onClick={() => setError(null)}>×</button>
-          )}
+      {/* 顶栏错误（常驻，可手动关闭；一次性结果提示已改右下角 toast） */}
+      {error !== null && (
+        <div className="pm-banner pm-banner-error">
+          {error}
+          <button type="button" className="pm-banner-close" onClick={() => setError(null)}>×</button>
         </div>
       )}
 

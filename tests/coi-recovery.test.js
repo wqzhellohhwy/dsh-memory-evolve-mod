@@ -8,6 +8,7 @@ import { AdapterStore } from '../lib/coi/adapters.js'
 import { SessionStore } from '../lib/coi/session-store.js'
 import { TaskStore } from '../lib/coi/tasks-store.js'
 import { CoiScheduler } from '../lib/coi/scheduler.js'
+import { tmproot } from './_tmp.js'
 
 /**
  * COI 高风险路径测试（稳定版复审补测）：
@@ -22,7 +23,7 @@ after(() => {
 })
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-coi-recovery-'))
+  return tmproot("dsh-coi-recovery-")
 }
 
 /** fake spawn：记录子进程，测试手动触发 stdout/stderr。 */

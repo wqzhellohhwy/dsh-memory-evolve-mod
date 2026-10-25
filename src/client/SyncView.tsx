@@ -20,6 +20,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import { useToast } from './Toast.tsx'
+import { InlineError } from './InlineError.tsx'
 
 const API = '/memory-evolve/memory-sync'
 
@@ -104,9 +106,6 @@ function clamp(text: string | null, max = 60): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat
 }
 
-/** 操作反馈（成功/失败）。 */
-type Notice = { kind: 'ok' | 'error'; text: string } | null
-
 /** 子 Tab：project=本项目 / global=全局记忆 / remote=共享记忆库。 */
 type SyncFeature = 'project' | 'global' | 'remote'
 
@@ -118,8 +117,11 @@ export function SyncView(props: ConvViewProps & { t: Translate }): JSX.Element {
    *  全局推送被某轨冲突拦截时，冲突区就在全局子 Tab 里解决）。 */
   const [globalConflicts, setGlobalConflicts] = useState<Record<string, ConflictItem[]>>({})
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<Notice>(null)
+  /** 一次性操作结果提示（右下角弹窗）；页面内不再有提示条。 */
+  const notify = useToast(t)
   const [initialized, setInitialized] = useState(false) // status 首次加载完成标记
+  /** 整页加载失败：页内常驻错误 + 重试。 */
+  const [loadError, setLoadError] = useState<string | null>(null)
   /** 当前子 Tab（跨重挂持久化：状态刷新导致组件重挂后恢复）。 */
   const [feature, setFeature] = useState<SyncFeature>('project')
   /** 「共享记忆库」子 Tab 的地址输入：初始回显已配置的共享仓库地址。 */
@@ -139,6 +141,7 @@ export function SyncView(props: ConvViewProps & { t: Translate }): JSX.Element {
         api<{ conflicts: ConflictItem[] }>(`/conflicts?sessionId=${encodeURIComponent(sessionId)}`),
       ])
       const nextStatus = 'status' in s && s.status !== undefined ? s.status : (s as SyncStatus)
+      setLoadError(null)
       setStatus(nextStatus)
       // 记忆远端输入框回显已配置的共享仓库地址（设备级 global.url）。
       // 不能回显项目 originUrl——A 模式下 originUrl 是主代码仓库地址，
@@ -162,7 +165,7 @@ export function SyncView(props: ConvViewProps & { t: Translate }): JSX.Element {
       }))
       setGlobalConflicts(gMap)
     } catch (error) {
-      setNotice({ kind: 'error', text: t('syncTab.loadFailed', { message: (error as Error).message }) })
+      setLoadError(t('panel.loadFailed', { message: (error as Error).message }))
     } finally {
       setInitialized(true)
     }
@@ -181,13 +184,12 @@ export function SyncView(props: ConvViewProps & { t: Translate }): JSX.Element {
   const run = async (op: () => Promise<unknown>): Promise<void> => {
     if (busy) return
     setBusy(true)
-    setNotice(null)
     try {
       const result = await op()
       const r = result as { ok?: boolean; text?: string }
-      setNotice({ kind: r.ok === false ? 'error' : 'ok', text: r.text ?? 'ok' })
+      notify(r.ok === false ? 'error' : 'ok', r.text ?? 'ok')
     } catch (error) {
-      setNotice({ kind: 'error', text: (error as Error).message })
+      notify('error', (error as Error).message)
     } finally {
       setBusy(false)
       void refresh()
@@ -229,12 +231,9 @@ export function SyncView(props: ConvViewProps & { t: Translate }): JSX.Element {
         <div className="bb-empty">{t('syncTab.loading')}</div>
       ) : (
         <>
-          {notice !== null && (
-            <div className={notice.kind === 'ok' ? 'me-notice-ok' : 'me-notice-error'}>
-              {notice.text}
-            </div>
+          {loadError !== null && (
+            <InlineError text={loadError} retryText={t('panel.retry')} onRetry={() => { void refresh() }} />
           )}
-
           {/* 子 Tab 栏：本项目 / 全局记忆 / 记忆远端（2026-08-11 用户拍板） */}
           <div className="mt-file-tabs" role="tablist">
             <button

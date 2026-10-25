@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TemplateStore, BUILTIN_TEMPLATES } from '../lib/coi/templates.js'
 import { setLocale, getLocale, translate, COI_DICT } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-coi-tpl-i18n-'))
+  return tmproot("dsh-coi-tpl-i18n-")
 }
 
 test('builtin template display names follow the active locale', () => {

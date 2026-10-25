@@ -22,6 +22,7 @@ import { runSessionSearch, sessionSearchToolDefinition, installSessionSearch } f
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 清理所有临时目录。 */
@@ -31,7 +32,7 @@ after(() => {
 })
 
 function tempDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-search-test-'))
+  const dir = tmproot("dsh-search-test-")
   temps.push(dir)
   return dir
 }

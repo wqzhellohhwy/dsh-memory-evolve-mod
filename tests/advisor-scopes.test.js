@@ -105,9 +105,9 @@ test('buildAdvisorSystemPrompt：五层拼接（有则拼、无则省略）+ 层
     conversation: '评审会话约束内容',
   })
   assert.ok(full.includes('你是评审员'))
-  assert.ok(full.includes('### 全局约束（所有项目所有会话生效'))
+  assert.ok(full.includes('### 全局约束（所有工作区所有会话生效'))
   assert.ok(full.includes('全局约束内容'))
-  assert.ok(full.includes('### 项目约束（本工作区所有会话生效'))
+  assert.ok(full.includes('### 工作区约束（本工作区所有会话生效'))
   assert.ok(full.includes('项目约束内容'))
   assert.ok(full.includes('### 会话约束（本会话生效'))
   assert.ok(full.includes('会话约束内容'))
@@ -120,7 +120,7 @@ test('buildAdvisorSystemPrompt：五层拼接（有则拼、无则省略）+ 层
 
 test('buildAdvisorSystemPrompt：空层省略；全空返回空串', () => {
   const partial = buildAdvisorSystemPrompt({ system: 'SYS', session: 'SESS' })
-  assert.ok(!partial.includes('项目约束'))
+  assert.ok(!partial.includes('工作区约束'))
   assert.ok(!partial.includes('评审会话约束'))
   assert.equal(buildAdvisorSystemPrompt({ system: '' }), '')
 })

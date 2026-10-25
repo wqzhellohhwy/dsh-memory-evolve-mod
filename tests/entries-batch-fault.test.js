@@ -8,10 +8,11 @@ import { memoryTool } from '../lib/index.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-mem-evolve-test-'))
+  return tmproot("dsh-mem-evolve-test-")
 }
 
 /** 最小 memory 工具环境（entries 批量只走 daily/project，不触碰 approval/queue/archive）。 */
@@ -39,11 +40,14 @@ function lossless(value) {
 
 test('entries 多轨批量：单轨抛异常时其余轨道照常写入、失败被记录、返回无损', async () => {
   const { dir, store, tool, agent } = setup()
-  const origAdd = store.add.bind(store)
+  // v2：写入内部走 store.addEntry(target, {title, summary, …, body}, agent)，
+  // 不再是 store.add(target, content, agent)——mock 目标必须跟着换，否则
+  // 注入的故障根本不会触发（测试假绿）。
+  const origAddEntry = store.addEntry.bind(store)
   // 让 project 轨写入抛异常（模拟锁文件删除失败等意外）
-  store.add = (target, content, a) => {
-    if (String(content).includes('BOOM')) throw new Error('模拟锁文件删除失败: .memory.lock')
-    return origAdd(target, content, a)
+  store.addEntry = (target, input, a) => {
+    if (String(input?.body ?? '').includes('BOOM')) throw new Error('模拟锁文件删除失败: .memory.lock')
+    return origAddEntry(target, input, a)
   }
   const exec = { agent }
   // 修复前：循环在 project 轨中断（daily 已写但结果丢失、返回值含 undefined）→ 断言失败；

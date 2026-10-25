@@ -23,6 +23,7 @@ import { MemoryStore } from '../lib/store.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 所有测试创建的调度器：统一 dispose，避免 flush 定时器挂住事件循环。 */
@@ -32,7 +33,7 @@ after(() => {
 })
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-coi-test-'))
+  return tmproot("dsh-coi-test-")
 }
 
 /** 可注入的 fake spawn：记录子进程，测试里手动触发输出/结束。 */
@@ -104,7 +105,7 @@ test('adapter validation rejects bad shapes', () => {
 test('adapter store: builtins + custom CRUD', () => {
   const dir = tempDir()
   const store = new AdapterStore(join(dir, 'adapters.json'))
-  assert.equal(store.list().length, 4)
+  assert.equal(store.list().length, 3)
   assert.ok(store.get('kimi'))
   const custom = store.upsert({ id: 'my-cli', name: 'My CLI', type: 'plain-cli', binary: 'mytool', args: ['{task}'] })
   assert.equal(custom.id, 'my-cli')
@@ -531,7 +532,7 @@ test('coi tools: de_coi_adapters lists scenarios and enabled state', async () =>
   const adaptersTool = tools.find((t) => t.name === 'de_coi_adapters')
   const res = await adaptersTool.execute({})
   assert.equal(res.ok, true)
-  assert.equal(res.adapters.length, 4)
+  assert.equal(res.adapters.length, 3)
   const kimi = res.adapters.find((a) => a.id === 'kimi')
   assert.equal(kimi.enabled, true)
   assert.ok(kimi.useCase.length > 0)
@@ -596,15 +597,15 @@ test('scheduler: memory context injection (AI 自主选择轨, inline + file fal
   // 不注入 AGENTS.md 全局规则（用户决策：只注入记忆轨，外部 COI 不背 DSH 纪律）
   assert.ok(!arg1.includes('【全局规则 AGENTS.md】'), '不注入 AGENTS.md 段')
   // 自定义文本叠加
-  const withText = scheduler.dispatch({ adapterId: 'grok', prompt: '任务3', contextText: '【自查】项目日志要点：完成了登录模块' })
+  const withText = scheduler.dispatch({ adapterId: 'grok', prompt: '任务3', contextText: '【自查】工作区日志要点：完成了登录模块' })
   const arg2 = harness.children[3].args[1]
-  assert.ok(arg2.includes('项目日志要点：完成了登录模块'))
+  assert.ok(arg2.includes('工作区日志要点：完成了登录模块'))
   // 超长（>32KB）：写文件 + 路径
   const big = 'x'.repeat(40 * 1024)
   const withBig = scheduler.dispatch({ adapterId: 'grok', prompt: '任务4', injectTracks: ['key'], contextText: big })
   const arg3 = harness.children[4].args[1]
   assert.ok(arg3.includes('已写入文件'))
-  assert.match(arg3, /contexts\/coi-[a-z0-9-]+\.txt/)
+  assert.match(arg3, /contexts[\\/]coi-[a-z0-9-]+\.txt/)
   // 非法轨被过滤（不会注入）
   const bad = scheduler.dispatch({ adapterId: 'grok', prompt: '任务5', injectTracks: ['memory', 'AGENTS'] })
   assert.ok(harness.children[5].args[1].includes('背景信息'), '合法轨仍注入')
@@ -618,7 +619,7 @@ test('skills sync: version-gated copy protects user edits', async () => {
   mkdirSync(join(pluginSkills, 'kimi-cli-calling'), { recursive: true })
   writeFileSync(join(pluginSkills, 'kimi-cli-calling', 'SKILL.md'), '---\nx-version: 1\n---\n# kimi v1\n')
   const { syncBuiltinSkills, BUILTIN_SKILLS } = await import('../lib/coi/skills-sync.js')
-  assert.deepEqual(BUILTIN_SKILLS, ['kimi-cli-calling', 'codex-cli-calling', 'grok-cli-calling', 'hermes-cli-calling', 'memory-consolidate'])
+  assert.deepEqual(BUILTIN_SKILLS, ['kimi-cli-calling', 'codex-cli-calling', 'grok-cli-calling', 'memory-consolidate'])
   const results = syncBuiltinSkills(pluginSkills, userSkills)
   assert.equal(results.find((r) => r.name === 'kimi-cli-calling').action, 'synced')
   assert.equal(results.find((r) => r.name === 'codex-cli-calling').action, 'missing')
@@ -845,11 +846,11 @@ test('wakeOnComplete: no agentsService / unknown owner → silent skip, task sti
 test('templates and stats', () => {
   const dir = tempDir()
   const { templates } = bootStores(dir)
-  assert.equal(templates.list().length, 4)
+  assert.equal(templates.list().length, 3)
   assert.ok(templates.get('review-code'))
   const custom = templates.upsert({ id: 'my-tpl', name: '我的模板', prompt: '做 XX' })
   assert.equal(custom.name, '我的模板')
-  assert.equal(templates.list().length, 5)
+  assert.equal(templates.list().length, 4)
   assert.equal(templates.remove('review-code'), false) // 内置不可删
   assert.equal(templates.remove('my-tpl'), true)
   // stats
@@ -1004,7 +1005,7 @@ test('coi tools: status/wait render 输出开头给出完整日志路径（省�
   harness.children[0].stdout.emit('data', '第一行输出\n')
   harness.children[0].emit('close', 0)
   const done = statusTool.output.render({}, { ok: true, message: 'm', task: (await statusTool.execute({ taskId: result.taskId })).task })
-  assert.match(done[0].text, /完整日志：.*logs\/.+\.log（输出为尾部摘要；需要完整输出请用 read 工具读取该文件，不要自行搜索）/s)
+  assert.match(done[0].text, /完整日志：.*logs[\\/].+\.log（输出为尾部摘要；需要完整输出请用 read 工具读取该文件，不要自行搜索）/s)
   assert.ok(done[0].text.includes(scheduler.tasks.logPath(result.taskId)), '路径必须与留档文件一致')
   // wait 同款
   const waited = await waitTool.execute({ taskId: result.taskId, timeoutMs: 2000 })
@@ -1033,7 +1034,7 @@ test('memory context: key branch filtering uses declared task branch', () => {
   assert.ok(ctxMain.includes('全局可见的项目约定'))
   assert.ok(ctxMain.includes('main 分支的约定'))
   assert.ok(!ctxMain.includes('dev 分支的约定'), '其他分支的 key 不注入')
-  assert.ok(ctxMain.includes('【本项目关键记忆（分支 main）】'))
+  assert.ok(ctxMain.includes('【本工作区关键记忆（分支 main）】'))
   // 任务声明分支 dev：只注入无标记 + dev
   const ctxDev = buildMemoryContext(store, { cwd, branch: 'dev' })
   assert.ok(ctxDev.includes('dev 分支的约定'))
@@ -1045,20 +1046,20 @@ test('memory context: key branch filtering uses declared task branch', () => {
   assert.ok(!ctxAny.includes('分支 main）'), '未声明分支时标题不带分支名')
   // 无 cwd：不注入项目关键记忆段
   const ctxNoCwd = buildMemoryContext(store, {})
-  assert.ok(!ctxNoCwd.includes('本项目关键记忆'))
+  assert.ok(!ctxNoCwd.includes('本工作区关键记忆'))
   // tracks 轨过滤（AI 经 injectTracks 自主选择）：只取指定轨，缺省=全部
   const ctxOnlyKey = buildMemoryContext(store, { cwd, branch: 'main', tracks: ['key'] })
-  assert.ok(ctxOnlyKey.includes('本项目关键记忆'), 'key 轨注入')
+  assert.ok(ctxOnlyKey.includes('本工作区关键记忆'), 'key 轨注入')
   assert.ok(!ctxOnlyKey.includes('全局事实条目'), '未选 memory 轨不注入')
   assert.ok(!ctxOnlyKey.includes('用户偏好条目'), '未选 user 轨不注入')
   const ctxOnlyMemory = buildMemoryContext(store, { cwd, tracks: ['memory'] })
   assert.ok(ctxOnlyMemory.includes('全局事实条目'))
-  assert.ok(!ctxOnlyMemory.includes('本项目关键记忆'), '未选 key 轨不注入项目记忆')
+  assert.ok(!ctxOnlyMemory.includes('本工作区关键记忆'), '未选 key 轨不注入项目记忆')
   assert.ok(!ctxOnlyMemory.includes('用户偏好条目'), '未选 user 轨不注入')
   const ctxOnlyUser = buildMemoryContext(store, { cwd, tracks: ['user'] })
   assert.ok(ctxOnlyUser.includes('用户偏好条目'))
   assert.ok(!ctxOnlyUser.includes('全局事实条目'), '未选 memory 轨不注入')
-  assert.ok(!ctxOnlyUser.includes('本项目关键记忆'), '未选 key 轨不注入项目记忆')
+  assert.ok(!ctxOnlyUser.includes('本工作区关键记忆'), '未选 key 轨不注入项目记忆')
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -1181,7 +1182,7 @@ test('coi api: adapters, tasks dispatch + status + cancel flow', async () => {
   const api = await bootApi(dir)
   try {
     const adapters = await api.request('GET', '/memory-evolve/api/coi/adapters')
-    assert.equal(adapters.data.adapters.length, 4)
+    assert.equal(adapters.data.adapters.length, 3)
     assert.ok(adapters.data.adapters.find((a) => a.id === 'kimi').guide)
     // 每个适配器带 avgMs（平均完成耗时毫秒；无完成记录 = 0）——GUI 列表展示用
     for (const a of adapters.data.adapters) {
@@ -1753,7 +1754,7 @@ test('coi tools: de_broadcast send/list/read/delete via session id', async () =>
   const execB = { agent: { session: { id: 'sessB', header: { cwd: '/p' } } } }
   const execA = { agent: { session: { id: 'sessA', header: { cwd: '/p' } } } }
   // send：sender 从执行上下文自动取（B 给 A 发）；subject 缺省取内容首行
-  const sent = await msgTool.execute({ action: 'send', recipients: ['sessA'], content: '请查看项目日志' }, execB)
+  const sent = await msgTool.execute({ action: 'send', recipients: ['sessA'], content: '请查看工作区日志' }, execB)
   assert.equal(sent.ok, true)
   // list：A 收到 1 条未读；无关会话 0 条；收件箱式（主题 + 简短简介）
   const listA = await msgTool.execute({ action: 'list' }, execA)
@@ -1761,14 +1762,14 @@ test('coi tools: de_broadcast send/list/read/delete via session id', async () =>
   assert.equal(listA.messages[0].unread, true)
   assert.equal(listA.messages[0].status, 'unread', '每条带状态：未读')
   assert.equal(listA.messages[0].sender, 'sessB')
-  assert.equal(listA.messages[0].subject, '请查看项目日志', '缺省 subject 取内容首行')
+  assert.equal(listA.messages[0].subject, '请查看工作区日志', '缺省 subject 取内容首行')
   assert.ok(listA.messages[0].content.length <= 60, 'list 只给简短简介（收件箱式）')
   const listOther = await msgTool.execute({ action: 'list' }, { agent: { session: { id: 'sessX' } } })
   assert.equal(listOther.messages.length, 0)
   // read：返回全文（不截断）+ 已读（status=read）
   const read = await msgTool.execute({ action: 'read', id: listA.messages[0].id }, execA)
   assert.equal(read.ok, true)
-  assert.ok(read.messages[0].content.includes('项目日志'))
+  assert.ok(read.messages[0].content.includes('工作区日志'))
   assert.equal(read.messages[0].status, 'read', '读后状态=已读')
   // 读即消费：A read 后（唯一接收者）消息自动删除，列表为空
   const listA2 = await msgTool.execute({ action: 'list' }, execA)

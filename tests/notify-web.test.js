@@ -4,10 +4,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NotificationStore } from '../lib/notify-web.js'
+import { tmproot } from './_tmp.js'
 
 /** 临时目录夹具。 */
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-notify-web-test-'))
+  return tmproot("dsh-notify-web-test-")
 }
 
 /** 组装一条最小通知输入。 */

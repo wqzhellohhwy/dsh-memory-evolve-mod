@@ -4,10 +4,11 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ModelConfigStore, normalizeModelsPatch } from '../lib/models.js'
+import { tmproot } from './_tmp.js'
 
 /** 临时目录夹具：每个测试独立目录，用完即删。 */
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-models-test-'))
+  return tmproot("dsh-models-test-")
 }
 
 test('ModelConfigStore：新增模型配置并原子落盘', () => {

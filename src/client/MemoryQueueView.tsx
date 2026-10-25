@@ -12,6 +12,8 @@
 import { useEffect, useState } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { RUNTIME_CONFIG_CHANGED } from './todo-tab-lifecycle.js'
+import { useToast } from './Toast.tsx'
+import { InlineError } from './InlineError.tsx'
 
 /** Which feature sub-tab is active. */
 export type MemoryFeature = 'guide' | 'suggestions' | 'todo-suggestions' | 'skills' | 'config'
@@ -106,6 +108,8 @@ interface RuntimeConfig {
   searchDocsEnabled: boolean
   /** 本地搜索四档模式：all / filename / content / off。 */
   searchDocsMode: string
+  /** 记忆库管理工具 memory_library 的总开关（2026-10-15 B3，默认关）。 */
+  memoryLibraryEnabled: boolean
   coiEnabled: boolean
   broadcastEnabled: boolean
   sessionSearchEnabled: boolean
@@ -178,8 +182,11 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
   const [edits, setEdits] = useState<Record<number, string>>({})
   /** 采纳时的目标轨选择（1-based index → 覆盖轨；缺省=AI 推荐的分类）。 */
   const [targetPicks, setTargetPicks] = useState<Record<number, string>>({})
-  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 一次性结果提示（右下角弹窗）。 */
+  const notify = useToast(t)
+  /** 整页加载失败：页内常驻错误 + 重试。 */
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = (): void => {
     void Promise.all([
@@ -187,6 +194,7 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       api<{ entries: PendingSkill[] }>('/api/pending-skills'),
       api<{ config: RuntimeConfig }>('/api/config'),
     ]).then(([s, sk, c]) => {
+      setLoadError(null)
       // Facts that resurfaced in several reviews are the most likely to be
       // worth confirming — show them first. 每条携带服务端原始队列下标，
       // 操作时回传原始序号（见 SuggestionRow 注释），保证与服务端对齐。
@@ -200,7 +208,7 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       setConfig(c.config)
       setDraft((prev) => prev ?? c.config)
     }).catch((error: Error) => {
-      setNotice({ kind: 'error', text: t('panel.config.failed', { message: error.message }) })
+      setLoadError(t('panel.loadFailed', { message: error.message }))
     })
   }
 
@@ -233,11 +241,11 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       method: 'POST',
       body: JSON.stringify(body),
     }).then((report) => {
-      setNotice({ kind: 'ok', text: summarizeReport(report) })
+      notify('ok', summarizeReport(report))
       load()
       onChanged()
     }).catch((error: Error) => {
-      setNotice({ kind: 'error', text: t('panel.config.failed', { message: error.message }) })
+      notify('error', t('panel.config.failed', { message: error.message }))
     }).finally(() => setBusy(false))
   }
 
@@ -247,11 +255,11 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       method: 'POST',
       body: JSON.stringify({ name }),
     }).then(() => {
-      setNotice({ kind: 'ok', text: t('panel.skills.done', { op: op === 'approve' ? t('panel.skills.approve') : t('panel.skills.reject') }) })
+      notify('ok', t('panel.skills.done', { op: op === 'approve' ? t('panel.skills.approve') : t('panel.skills.reject') }))
       load()
       onChanged()
     }).catch((error: Error) => {
-      setNotice({ kind: 'error', text: t('panel.config.failed', { message: error.message }) })
+      notify('error', t('panel.config.failed', { message: error.message }))
     }).finally(() => setBusy(false))
   }
 
@@ -273,6 +281,7 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       writeGuardThreshold: draft.writeGuardThreshold,
       searchDocsEnabled: draft.searchDocsEnabled,
       searchDocsMode: draft.searchDocsMode,
+      memoryLibraryEnabled: draft.memoryLibraryEnabled,
       coiEnabled: draft.coiEnabled,
       broadcastEnabled: draft.broadcastEnabled,
       advisorEnabled: draft.advisorEnabled,
@@ -299,9 +308,9 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
       // 配置保存成功后广播运行时配置变更事件：待办 Tab 生命周期监听它，
       // 关闭 todoEnabled 时立即隐藏 Tab、重新启用时恢复（见 index.ts apply）。
       window.dispatchEvent(new CustomEvent(RUNTIME_CONFIG_CHANGED, { detail: res.config }))
-      setNotice({ kind: 'ok', text: t('panel.config.saved') })
+      notify('ok', t('panel.config.saved'))
     }).catch((error: Error) => {
-      setNotice({ kind: 'error', text: t('panel.config.failed', { message: error.message }) })
+      notify('error', t('panel.config.failed', { message: error.message }))
     }).finally(() => setBusy(false))
   }
 
@@ -319,10 +328,9 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
 
   return (
     <div className="me-panel">
-      {notice !== null && (
-        <div className={`me-notice me-notice-${notice.kind}`}>{notice.text}</div>
+      {loadError !== null && (
+        <InlineError text={loadError} retryText={t('panel.retry')} onRetry={load} />
       )}
-
       {feature === 'guide' && (
         <section className="me-block">
           <div className="me-block-head">
@@ -635,7 +643,8 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
           <div className="me-block-head">
             <h3 className="me-heading">{t('panel.config.title')}</h3>
           </div>
-          <p className="me-help">{t('panel.config.help')}</p>
+          {/* 「修改立即生效并持久化（覆盖 config.yaml 的对应项）。」已按用户要求
+              删除（2026-10-15 UI-12）：每个开关自身的说明里都会写清生效方式。 */}
           {draft === null ? (
             <p className="me-muted">{t('panel.loading')}</p>
           ) : (
@@ -829,6 +838,21 @@ export function MemoryQueueView(props: MemoryQueueViewProps): JSX.Element {
                     <option value="content">{t('panel.config.searchDocsMode.content')}</option>
                     <option value="off">{t('panel.config.searchDocsMode.off')}</option>
                   </select>
+                </label>
+                {/* 记忆库管理工具（2026-10-15 B3/F-5）：默认关。打开后模型能对记忆库
+                    做**库级**操作：扫全库标题、取文件路径、批量删改归档、跨级搬移、查重。
+                    单条增删改查仍走 memory 工具、检索仍走 memory_search。 */}
+                <label className="me-field">
+                  <span className="me-field-label">
+                    {t('panel.config.memoryLibraryEnabled')}
+                    <em className="me-field-hint">{t('panel.config.memoryLibraryEnabled.hint')}</em>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="me-switch"
+                    checked={draft.memoryLibraryEnabled}
+                    onChange={(event) => patchDraft({ memoryLibraryEnabled: event.target.checked })}
+                  />
                 </label>
                 <label className="me-field">
                   <span className="me-field-label">

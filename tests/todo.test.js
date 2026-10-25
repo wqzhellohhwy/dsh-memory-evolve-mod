@@ -11,10 +11,11 @@ import { installApi } from '../lib/api.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-todo-test-'))
+  return tmproot("dsh-memory-todo-test-")
 }
 
 /** 前一天（本地时区）的 YYYY-MM-DD。 */
@@ -53,7 +54,8 @@ test('todo store: add writes header + tagged entry; parseAll decodes it', () => 
     const out = store.addTodo('life', '陪妈妈去医院复查', {}, undefined)
     assert.equal(out.ok, true)
     assert.match(out.id, /^[0-9a-f]{8}$/)
-    const text = readFileSync(join(dir, 'TODOS-life.md'), 'utf8')
+    // v2 三类模型：全局类待办落 <memoryDir>/todo/TODOS-<组id>.md
+    const text = readFileSync(join(dir, 'todo', 'TODOS-life.md'), 'utf8')
     assert.ok(text.startsWith(TODO_HEADER))
     assert.ok(text.includes(`[id: ${out.id}]`))
     const items = store.itemsOf('life')
@@ -103,8 +105,9 @@ test('todo store: project track is cwd-isolated; missing cwd fails loud', () => 
     assert.equal(store.itemsOf('project', '/proj/a').length, 1)
     assert.equal(store.itemsOf('project', '/proj/a')[0].text, 'A 项目的事')
     assert.equal(store.itemsOf('project', '/proj/b').length, 1)
-    assert.ok(existsSync(join(dir, 'projects', projectHash('/proj/a'), 'TODOS.md')))
-    assert.ok(!existsSync(join(dir, 'projects', projectHash('/proj/a'), 'MEMORY.md')))
+    // 项目类待办落 <项目目录>/todo/TODOS-<组id>.md，与项目记忆互不干扰
+    assert.ok(existsSync(join(dir, 'projects', projectHash('/proj/a'), 'todo', 'TODOS-project.md')))
+    assert.ok(!existsSync(join(dir, 'projects', projectHash('/proj/a'), 'project')))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -120,7 +123,8 @@ test('todo store: daily track files per day', () => {
     // （UTC）算"今天"在本地凌晨时段会差一天导致测试误挂（本地 00:00-08:00
     // 期间 UTC 仍是前一天）。必须与实现保持一致。
     const today = todayStamp()
-    assert.ok(existsSync(join(dir, 'daily', `${today}.todo.md`)))
+    // 日志型（daily）待办多一层日期目录：<memoryDir>/todo/daily/<日期>.md
+    assert.ok(existsSync(join(dir, 'todo', 'daily', `${today}.md`)))
     assert.equal(store.itemsOf('daily').length, 1)
     assert.equal(store.itemsOf('daily', undefined, '2020-01-01').length, 0)
   } finally {
@@ -217,7 +221,7 @@ test('dtodo tool: add targets project with cwd, work without; list/done/update/r
     assert.equal(withCwd.target, 'project')
     const noCwd = await tool.execute({ action: 'add', content: '通用的事' }, exec(undefined))
     assert.equal(noCwd.ok, true)
-    assert.equal(noCwd.target, 'work')
+    assert.equal(noCwd.target, 'global')
 
     const list = await tool.execute({ action: 'list' }, exec('/proj/x'))
     assert.equal(list.ok, true)
@@ -303,11 +307,12 @@ test('todo store: past daily items — list past=true includes history, expired 
     assert.ok(order.indexOf('今天的待办') < order.indexOf('昨天写的、截止后天'))
     assert.ok(order.indexOf('昨天写的、截止后天') < order.indexOf('昨天已完成'))
 
-    // 全轨（默认 targets）+ past：life/work 照常，daily 含过往（默认仍过滤遗留）
-    store.addTodo('life', '生活的活', {}, undefined)
+    // 全轨（出厂 targets）+ past：daily 含过往（默认仍过滤遗留）
+    // life/work 已被用户弃用、出厂停用，所以改用出厂启用的全局待办。
+    store.addTodo('global', '全局待办的事', {}, undefined)
     const mixed = store.listTodos(TODO_TARGETS, { all: true, past: true }, undefined, today)
     const mt = mixed.items.map((i) => i.text)
-    assert.ok(mt.includes('生活的活'))
+    assert.ok(mt.includes('全局待办的事'))
     assert.ok(mt.includes('昨天已完成'))
     assert.ok(!mt.includes('更早的遗留'))
     // 加 expired=true 后遗留出现
@@ -506,7 +511,7 @@ test('suggestions approve: per-index target override re-classifies into another 
     enqueueSuggestion(queue, 'memory', '本该是项目关键记忆的事实', '分类不够准', agent)
     enqueueSuggestion(queue, 'user', '用户偏好整理', 'AI 建议到 user 了', agent)
     enqueueSuggestion(queue, 'todo-work', '这句话其实不是待办', 'AI 建议到待办了', agent)
-    // 覆盖：1 → key（按建议时记录的 cwd 写入项目 KEY.md）；2 → memory；3 → 保持 todo-work
+    // 覆盖：1 → key（按建议时记录的 cwd 写入该项目 key 分组目录）；2 → memory；3 → 保持 todo-work
     const report = approveSuggestions(store, todoStore, queue, [1, 2, 3], agent, undefined, new Map([[1, 'key'], [2, 'memory']]))
     assert.equal(report.remaining, 0)
     const keyAgent = { session: { header: { cwd: '/proj/p' } } }
@@ -550,20 +555,22 @@ test('todo suggestions: archive keeps origin track, promote writes it back', () 
     enqueueSuggestion(queue, 'todo-work', '整理知识库笔记', '值得做但不急', agent)
     const archived = archiveSuggestions(archive, queue, [1])
     assert.equal(archived.remaining, 0)
-    const entries = archive.entriesOf('todo-archive')
+    // 2026-10-15 B2：待办归档也走目录模型 —— 归档轨 `todo-<组id>`，落进该分组
+    // 自己的归档目录（与记忆同一套规则），不再是单文件 TODO-archive.md。
+    const entries = archive.entriesOf('todo-work')
     assert.equal(entries.length, 1)
     assert.ok(entries[0].includes('（原轨：todo-work）'))
-    // 普通记忆建议归档不带原轨标记
+    // 普通记忆建议归档不带原轨标记，且不落进待办归档目录
     enqueueSuggestion(queue, 'memory', '全局事实', 'r', agent)
     archiveSuggestions(archive, queue, [1])
-    assert.ok(!archive.entriesOf('todo-archive').some((e) => e.includes('全局事实')))
-    // 转正：原轨标记决定写回轨
-    const promoted = promoteArchived(store, todoStore, archive, 'todo-archive', '整理知识库笔记', undefined)
+    assert.ok(!archive.entriesOf('todo-work').some((e) => e.includes('全局事实')))
+    // 转正：归档轨决定写回哪个待办分组
+    const promoted = promoteArchived(store, todoStore, archive, 'todo-work', '整理知识库笔记', undefined)
     assert.equal(promoted.ok, true)
-    assert.ok(promoted.message.includes('todo-work'))
+    assert.ok(promoted.message.includes('work'))
     assert.equal(todoStore.itemsOf('work').length, 1)
     assert.equal(todoStore.itemsOf('work')[0].text, '整理知识库笔记')
-    assert.equal(archive.entriesOf('todo-archive').length, 0)
+    assert.equal(archive.entriesOf('todo-work').length, 0)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -621,7 +628,9 @@ test('todo API: list/add/done/update/remove over HTTP', async () => {
       sessionId: 's1', action: 'add', content: 'API 待办', quadrant: 'q2', due: '2026-08-12',
     })
     assert.equal(add.status, 200)
-    assert.equal(add.data.target, 'project')
+    // 未指定 target 时按 defaultTarget 解析（与 dtodo 工具同款逻辑）：cwd + sessionId
+    // 齐备 → 落到排在最前的可写分组（会话待办）；life/work 已出厂停用，不再当兜底。
+    assert.equal(add.data.target, 'session')
     assert.match(add.data.id, /^[0-9a-f]{8}$/)
 
     const list2 = await api.request('GET', '/memory-evolve/api/todo?sessionId=s1')
@@ -643,6 +652,78 @@ test('todo API: list/add/done/update/remove over HTTP', async () => {
   } finally {
     await api.close()
     rmSync(api.dir, { recursive: true, force: true })
+  }
+})
+
+test('会话类待办：显式传 sessionId 可写，且不同会话彼此隔离', () => {
+  const dir = tempDir()
+  try {
+    const store = new TodoStore(dir)
+    // 不传 sessionId：会话类分组定位不了，必须给出可行动的错。
+    // （回归：装配层漏注入 sessionIdOf、调用点又都不传值 → 会话待办永远写不了）
+    assert.throws(() => store.fileOf('session', '/proj', undefined), /会话类需要会话 id/)
+    const pathA = store.fileOf('session', '/proj', undefined, 'sess-A')
+    assert.ok(pathA.includes(join('sessions', 'sess-A', 'todo')), pathA)
+    const added = store.addTodo('session', '登录页要加验证码', {}, '/proj', 'sess-A')
+    assert.equal(added.ok, true)
+    assert.equal(store.itemsOf('session', '/proj', undefined, 'sess-A').length, 1)
+    // 会话隔离：另一个会话读不到
+    assert.equal(store.itemsOf('session', '/proj', undefined, 'sess-B').length, 0)
+    assert.match(readFileSync(pathA, 'utf8'), /登录页要加验证码/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('dtodo: 批量写入（items）一次调用写多条，跨分组生效', async () => {
+  const dir = tempDir()
+  try {
+    const store = new TodoStore(dir)
+    const tool = todoToolDefinition({ todoToolName: 'dtodo' }, store, () => true)
+    const exec = { agent: { session: { id: 's1', header: { cwd: '/proj' } } } }
+    const result = await tool.execute({
+      action: 'add',
+      items: [
+        { target: 'global', content: '批量一', quadrant: 'q1', due: '2026-12-01' },
+        { target: 'global', content: '批量二' },
+        { target: 'session', content: '批量三' },
+        { target: 'global', content: '   ' },
+      ],
+    }, exec)
+    assert.equal(result.ok, true)
+    assert.equal(result.ids.length, 3)
+    assert.equal(result.skipped, 1)
+    assert.deepEqual(store.itemsOf('global').map((item) => item.text), ['批量一', '批量二'])
+    assert.equal(store.itemsOf('session', '/proj', undefined, 's1').length, 1)
+    // 每条的四象限/截止各自生效
+    assert.equal(store.itemsOf('global')[0].quadrant, 'q1')
+    assert.equal(store.itemsOf('global')[0].due, '2026-12-01')
+    // 返回字段必须全在 output schema 内（additionalProperties:false —— 漏声明即工具整体报错）
+    for (const key of Object.keys(result)) {
+      assert.ok(key in tool.output.schema.properties, `返回字段 ${key} 未在 output.schema 中声明`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('dtodo: 批量写入的失败路径（空数组 / 非法 target 不写一半）', async () => {
+  const dir = tempDir()
+  try {
+    const store = new TodoStore(dir)
+    const tool = todoToolDefinition({ todoToolName: 'dtodo' }, store, () => true)
+    const exec = { agent: { session: { id: 's1', header: { cwd: '/proj' } } } }
+    const empty = await tool.execute({ action: 'add', items: [] }, exec)
+    assert.equal(empty.ok, false)
+    const bad = await tool.execute({
+      action: 'add',
+      items: [{ target: 'global', content: '先写的' }, { target: '不存在的分组', content: '后写的' }],
+    }, exec)
+    assert.equal(bad.ok, false)
+    // 非法 target 在写入前就被拦下 —— 前面那条也不能落盘
+    assert.equal(store.itemsOf('global').length, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 
@@ -712,7 +793,7 @@ test('todo disabled: API rejects reads and writes without changing stored todos'
   const api = await bootTodoApi({ todoEnabled: false })
   try {
     api.todoStore.addTodo('work', '既有待办', {}, undefined)
-    const before = readFileSync(join(api.dir, 'TODOS-work.md'), 'utf8')
+    const before = readFileSync(join(api.dir, 'todo', 'TODOS-work.md'), 'utf8')
     const read = await api.request('GET', '/memory-evolve/api/todo')
     const write = await api.request('POST', '/memory-evolve/api/todo', { action: 'add', target: 'work', content: '不得写入' })
     const promote = await api.request('POST', '/memory-evolve/api/archive/promote', { target: 'todo-archive', match: '不得转正' })
@@ -722,7 +803,7 @@ test('todo disabled: API rejects reads and writes without changing stored todos'
     assert.equal(read.data.code, 'TODO_DISABLED')
     assert.equal(write.data.code, 'TODO_DISABLED')
     assert.equal(promote.data.code, 'TODO_DISABLED')
-    assert.equal(readFileSync(join(api.dir, 'TODOS-work.md'), 'utf8'), before)
+    assert.equal(readFileSync(join(api.dir, 'todo', 'TODOS-work.md'), 'utf8'), before)
   } finally {
     await api.close()
     rmSync(api.dir, { recursive: true, force: true })

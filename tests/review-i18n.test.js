@@ -7,9 +7,10 @@ import { MemoryStore, SuggestionQueue } from '../lib/store.js'
 import { TodoStore } from '../lib/todo.js'
 import { approveSuggestions, enqueueSuggestion } from '../lib/review.js'
 import { setLocale, getLocale, translate, REVIEW_CMD_DICT } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-review-i18n-'))
+  return tmproot("dsh-review-i18n-")
 }
 
 test('duplicate suggestions report as skipped (not failed) in every locale', () => {

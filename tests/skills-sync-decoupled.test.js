@@ -24,12 +24,13 @@ import { fileURLToPath } from 'node:url'
 import {
   BUILTIN_SKILLS, DEFAULT_SKILL_DIR, PLUGIN_SKILLS_DIR, syncBuiltinSkillsIfEnabled,
 } from '../lib/coi/skills-sync.js'
+import { tmproot } from './_tmp.js'
 
 /** 仓库根（用于断言内置技能源头确实在包内）。 */
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-me-skills-decoupled-'))
+  return tmproot("dsh-me-skills-decoupled-")
 }
 
 function clean(dir) {
@@ -135,10 +136,10 @@ test('每次启动都汇报同步结果（含"全部 unchanged"这种最常见�
   try {
     const first = captureConsole(() => syncBuiltinSkillsIfEnabled({ skillDir: dir }, PLUGIN_SKILLS_DIR))
     assert.equal(first.logs.length, 1)
-    assert.match(first.logs[0], /更新 5 个/)
+    assert.match(first.logs[0], /更新 4 个/)
     const second = captureConsole(() => syncBuiltinSkillsIfEnabled({ skillDir: dir }, PLUGIN_SKILLS_DIR))
     assert.equal(second.logs.length, 1, '没有变更也要 log——这正是"技能到底装没装"最需要的一行')
-    assert.match(second.logs[0], /共 5 个，更新 0 个/)
+    assert.match(second.logs[0], /共 4 个，更新 0 个/)
     assert.equal(second.warns.length, 0)
   } finally {
     clean(dir)

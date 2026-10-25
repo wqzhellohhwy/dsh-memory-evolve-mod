@@ -238,7 +238,7 @@ function CanvasCardInner(props: CanvasCardProps): JSX.Element {
             {node.path ? (
               <button type="button" className="cg-open" onClick={() => props.onOpenFolder(node.id)} title="在系统文件管理器中打开该文件所在的文件夹（Finder / 资源管理器）">所在文件夹</button>
             ) : null}
-            <button type="button" onClick={() => props.onMigrate(node.id)} title="迁移节点归属（本会话/本项目/所有项目可见）">归属</button>
+            <button type="button" onClick={() => props.onMigrate(node.id)} title="迁移节点归属（本会话/本工作区/所有工作区可见）">归属</button>
             {props.openSession && node.scope === 'session' && node.sessionId && node.sessionId !== props.currentSessionId
               ? (
                 <button type="button" className="cg-open" onClick={() => props.openSession?.(node.sessionId!)} title="跳转到该节点所属会话">

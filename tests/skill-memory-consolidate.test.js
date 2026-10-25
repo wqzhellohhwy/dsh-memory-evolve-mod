@@ -7,6 +7,7 @@ import {
   ENTRY_DELIMITER, clusterEntries, computeIdf, cosine, diceBigrams, entryTerms,
   fnv1a32, main, normText, pairReasons, parseArgs, parseMemoryText, quotedRefersTo, scanDir, stripHeaderComment,
 } from '../skills/memory-consolidate/scripts/scan_memory.mjs'
+import { tmproot } from './_tmp.js'
 
 // memory-consolidate 内置技能的预扫脚本：解析 / 相似度 / 候选理由 / 聚类 /
 // 目录扫描 / CLI。脚本只做候选发现，写操作由 AI 用 memory 工具执行（不在本文件范围）。
@@ -119,7 +120,7 @@ test('clusterEntries：无关条目不产生簇', () => {
 })
 
 test('scanDir：全局 + 项目轨进合并对象，归档仅作上下文，daily/待办排除', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'memscan-'))
+  const dir = tmproot("memscan-")
   try {
     writeFileSync(join(dir, 'MEMORY.md'), `[2026-09-01] 全局甲条目内容\n§\n[2026-09-02] vite 构建产物部署到静态托管即可\n`)
     writeFileSync(join(dir, 'USER.md'), '[2026-09-01] 用户规则甲条目\n')
@@ -149,7 +150,7 @@ test('scanDir：全局 + 项目轨进合并对象，归档仅作上下文，dail
 })
 
 test('main CLI：报告落盘、统计正确；参数错误与目录错误有明确退出码', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'memcli-'))
+  const dir = tmproot("memcli-")
   const out = join(dir, 'report.json')
   try {
     const text = '[2026-09-01] 重复条目用于 CLI 冒烟\n§\n[2026-09-02] 重复条目用于 CLI 冒烟\n'

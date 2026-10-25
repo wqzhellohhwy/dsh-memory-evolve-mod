@@ -33,6 +33,7 @@ import {
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /**
@@ -42,7 +43,7 @@ setLocale('zh')
  */
 const tempDirs = []
 function tempConfig() {
-  const dir = mkdtempSync(join(tmpdir(), 'canvas-test-'))
+  const dir = tmproot("canvas-test-")
   tempDirs.push(dir)
   return { dir, config: { memoryDir: join(dir, 'board') } }
 }

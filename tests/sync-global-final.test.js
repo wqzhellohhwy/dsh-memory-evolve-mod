@@ -17,6 +17,7 @@ import { globalBranchFor } from '../lib/sync/filesets.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -28,7 +29,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-global-final-'))
+  return tmproot("dsh-global-final-")
 }
 
 function clean(dir) {

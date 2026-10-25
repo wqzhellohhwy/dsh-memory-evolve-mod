@@ -24,6 +24,7 @@ import { projectHash, projectLabel } from '../lib/store.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** Whether `git` is available in this environment (skip git tests otherwise). */
@@ -36,7 +37,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-identity-'))
+  return tmproot("dsh-sync-identity-")
 }
 
 function clean(dir) {

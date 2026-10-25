@@ -20,6 +20,7 @@ import { askConfirm } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView } from './TabGuideView.tsx'
+import { useToast } from './Toast.tsx'
 
 const API = '/memory-evolve/api/broadcast'
 const PAGE_SIZE = 20
@@ -58,8 +59,6 @@ interface Presence {
   online: boolean
   lastActiveAt: number | null
 }
-
-interface Notice { kind: 'ok' | 'error'; text: string }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, { headers: { 'content-type': 'application/json' }, ...init })
@@ -231,7 +230,8 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
   const [roomMsgExpanded, setRoomMsgExpanded] = useState<string | null>(null)
   const [presence, setPresence] = useState<Record<string, Presence[]>>({})
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
+  /** 一次性结果提示（右下角弹窗）。 */
+  const notify = useToast(t)
   const [copied, setCopied] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
@@ -322,10 +322,10 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
     if (!(await askConfirm(t('broadcast.message.deleteConfirm', { subject: msg.subject })))) return
     try {
       await fetchJson<{ ok: boolean }>(`/messages/${encodeURIComponent(msg.id)}`, { method: 'DELETE' })
-      setNotice({ kind: 'ok', text: t('broadcast.message.deleted') })
+      notify('ok', t('broadcast.message.deleted'))
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      notify('error', errText(err))
     }
   }
 
@@ -341,7 +341,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
         const res = await fetchJson<{ content: string }>(`/messages/${encodeURIComponent(msg.id)}/content`)
         setFullText((prev) => ({ ...prev, [msg.id]: res.content }))
       } catch (err) {
-        setNotice({ kind: 'error', text: errText(err) })
+        notify('error', errText(err))
       }
     }
   }
@@ -365,7 +365,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
       const res = await fetchJson<{ presence: Presence[] }>(`/rooms/${encodeURIComponent(room.id)}/presence`)
       setPresence((prev) => ({ ...prev, [room.id]: res.presence }))
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      notify('error', errText(err))
     }
   }
 
@@ -376,11 +376,11 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
         method: 'POST',
         body: JSON.stringify({ member }),
       })
-      setNotice({ kind: 'ok', text: t('broadcast.room.kick') })
+      notify('ok', t('broadcast.room.kick'))
       void load()
       setOpenRoom(null)
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      notify('error', errText(err))
     }
   }
 
@@ -389,13 +389,13 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
     try {
       const res = await fetchJson<{ ok: boolean; message?: string }>(`/rooms/${encodeURIComponent(room.id)}/dissolve`, { method: 'POST' })
       if (res.ok !== true) {
-        setNotice({ kind: 'error', text: res.message ?? (isEn() ? 'Operation failed' : '操作失败') })
+        notify('error', res.message ?? (isEn() ? 'Operation failed' : '操作失败'))
         return
       }
-      setNotice({ kind: 'ok', text: t('broadcast.room.dissolved') })
+      notify('ok', t('broadcast.room.dissolved'))
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      notify('error', errText(err))
     }
   }
 
@@ -591,8 +591,7 @@ export function BroadcastView(props: ConvViewProps & { t: Translate }): JSX.Elem
         )}
       </div>
 
-      {/* 通知/错误放子 Tab 之后（不挤占左上角） */}
-      {notice !== null && <div className={`bb-notice bb-notice-${notice.kind}`}>{notice.text}</div>}
+      {/* 加载失败是常驻状态（一次性结果已改右下角 toast） */}
       {error !== null && <div className="bb-error">{error}</div>}
 
       {view === 'guide' && renderGuide()}

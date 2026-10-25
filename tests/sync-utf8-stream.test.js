@@ -31,6 +31,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runGit } from '../lib/sync/repo.js'
+import { tmproot } from './_tmp.js'
 
 /** 假子进程：stdout/stderr 用可手动 push 的 Readable，测试精确控制分块边界。 */
 class FakeChild extends EventEmitter {
@@ -123,9 +124,13 @@ test('runGit 流式解码：连续多字符逐字节投递（最坏分块）后�
   assert.equal(result.stdout.includes('\uFFFD'), false, `逐字节分块被解码损坏：${JSON.stringify(result.stdout)}`)
 })
 
-test('集成冒烟：真实子进程链路（假 git 二进制）不产生 U+FFFD', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-git-utf8-'))
-  const bin = mkdtempSync(join(tmpdir(), 'dsh-fakegit-'))
+// Windows 无法执行「无扩展名 + shebang」的假 git（也认不了 PATH 的 ':' 分隔符），
+// 该链路在 Windows 上无法成立；逐字节分块解码已由上一个 mock 用例跨平台覆盖。
+test('集成冒烟：真实子进程链路（假 git 二进制）不产生 U+FFFD', {
+  skip: process.platform === 'win32' ? 'Windows 不支持 POSIX 假 git 二进制（见上）' : false,
+}, async () => {
+  const dir = tmproot("dsh-git-utf8-")
+  const bin = tmproot("dsh-fakegit-")
   const fake = join(bin, 'git')
   // 假 git：先写「记」+「忆」的首字节，60ms 后补写剩余两字节再退出（在 write 回调
   // 里退出，避免 process.exit 抢在 flush 之前把第二段截掉）。两段是否被 OS 合并成

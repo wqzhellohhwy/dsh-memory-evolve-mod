@@ -8,3 +8,8 @@ lib.bak-0812/
 *.bak-*
 *.BROKEN-*
 *.pre-*
+# 备份/临时（2026-10-25 补）
+.tmp/
+*.TMP
+*.bak
+*.BROKEN*

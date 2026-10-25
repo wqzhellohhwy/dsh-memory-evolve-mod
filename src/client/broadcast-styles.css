@@ -444,26 +444,7 @@
   box-shadow: 0 1px 3px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
 
-/* ---------- 通知 / 错误 ---------- */
-
-.bb-notice {
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 12px;
-  border-radius: 8px;
-}
-
-.bb-notice-ok {
-  color: var(--dsw-alias-state-success-primary);
-  background: var(--dsw-alias-state-success-tertiary);
-  border: 1px solid var(--dsw-alias-state-success-primary);
-}
-
-.bb-notice-error {
-  color: var(--dsw-static-red-900, #c53030);
-  background: color-mix(in srgb, var(--dsw-static-red-900, #c53030) 10%, transparent);
-  border: 1px solid var(--dsw-alias-state-error-secondary);
-}
+/* ---------- 错误 ---------- */
 
 .bb-error {
   font-size: 12px;

@@ -35,6 +35,7 @@ const PANEL_KEYS = [
   'writeGuardThreshold',
   'searchDocsEnabled',
   'searchDocsMode',
+  'memoryLibraryEnabled',
   'coiEnabled',
   'broadcastEnabled',
   'advisorEnabled',

@@ -199,7 +199,7 @@ function CatalogDialog(props: {
           本机全部
         </button>
         <button type="button" className={scope === 'project' ? 'cg-on' : ''} onClick={() => changeScope('project')}>
-          当前项目
+          当前工作区
         </button>
       </div>
       {searching ? <div className="cg-hint">搜索中…</div> : null}
@@ -352,14 +352,14 @@ function MigrateDialog(props: {
       <div className="cg-migrate-opts">
         <button type="button" className={`cg-migrate-opt${scope === 'session' ? ' cg-on' : ''}`} onClick={() => setScope('session')}>
           <strong>💬 本会话</strong>
-          <small>归当前会话（在别的会话打开画板看不到它，除非切「所有项目」）</small>
+          <small>归当前会话（在别的会话打开画板看不到它，除非切「所有工作区」）</small>
         </button>
         <button type="button" className={`cg-migrate-opt${scope === 'project' ? ' cg-on' : ''}`} onClick={() => setScope('project')}>
-          <strong>📁 本项目</strong>
-          <small>项目级：当前项目内所有会话都能看到</small>
+          <strong>📁 本工作区</strong>
+          <small>工作区级：当前工作区内所有会话都能看到</small>
         </button>
         <button type="button" className={`cg-migrate-opt${scope === 'global' ? ' cg-on' : ''}`} onClick={() => setScope('global')}>
-          <strong>🌐 所有项目可见</strong>
+          <strong>🌐 所有工作区可见</strong>
           <small>全局：任何会话、任何视角都能看到</small>
         </button>
       </div>

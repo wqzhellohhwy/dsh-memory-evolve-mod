@@ -7,23 +7,17 @@
 /* ---------- Root ---------- */
 
 .me-panel {
-  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  overflow-y: auto;
   padding: 4px 2px 28px;
   font-family: var(--dsw-font-family, inherit);
   color: var(--dsw-alias-label-primary);
 }
 
-/* Inside the session memory tab: the panel is a sub-view, not a full-height
-   settings column — cap its height so the tab never grows the page. */
-.mt-panel .me-panel {
-  height: auto;
-  max-height: 62vh;
-}
+/* 内层高度与滚动一律不设（用户 UI-6R）：sticky 只认最近的滚动祖先，面板自己
+   滚时顶栏只粘自己、随外层一起滚走。高度交给内容撑开，由外层容器统一滚动。 */
 
 /* ---------- Notice bar (success / error) ---------- */
 
@@ -47,15 +41,7 @@
   border-radius: 50%;
 }
 
-.me-notice-ok {
-  color: var(--dsw-alias-state-success-primary);
-  background: var(--dsw-alias-state-success-tertiary);
-  border: 1px solid var(--dsw-alias-state-success-primary);
-}
-.me-notice-ok::before {
-  background: var(--dsw-alias-state-success-primary);
-}
-
+/* 错误提示（页内常驻：加载失败 + 重试；一次性结果走右下角 toast） */
 .me-notice-error {
   color: var(--dsw-alias-state-error-primary);
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
@@ -63,6 +49,20 @@
 }
 .me-notice-error::before {
   background: var(--dsw-alias-state-error-primary);
+}
+
+.me-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.me-notice-action {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* 警告提示（未深度测试等需要用户知情的场景） */
@@ -73,6 +73,109 @@
 }
 .me-notice-warn::before {
   background: var(--dsw-alias-state-warning-primary, #b8860b);
+}
+
+/* ---------- Toast：右下角一次性提示（Toast.tsx 自建 DOM） ---------- */
+
+/* 容器本身不吃点击，只有条目可点 → 不遮挡右侧操作区域。 */
+.me-toast-host {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  /* 低于 ask-confirm 的覆盖层（2147483000）：确认框弹出时不被提示压住。 */
+  z-index: 2147482000;
+  display: flex;
+  flex-direction: column;
+  /* 从下往上堆：条数/高度超出 60vh 时裁掉的是**最旧**的顶部，最新一条始终可见。 */
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 8px;
+  max-height: 60vh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.me-toast {
+  /* 条目不吃点击（只 × 可点），避免连续操作时挡住右下角的按钮。 */
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: min(360px, 80vw);
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.me-toast-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.me-toast-out {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.me-toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.me-toast-close {
+  pointer-events: auto;
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.me-toast-close:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 视觉保持 16×16，热区向外扩到 24×24（透明伪元素，不影响布局）。 */
+.me-toast-close::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.me-toast-ok {
+  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.me-toast-error {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+  border-color: var(--dsw-alias-state-error-secondary);
+}
+
+.me-toast-warn {
+  color: var(--dsw-alias-state-warning-primary, #b8860b);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #b8860b) 10%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #b8860b) 40%, transparent);
 }
 
 /* ---------- Section cards ---------- */
@@ -149,8 +252,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 380px;
-  overflow-y: auto;
 }
 
 .me-item {
@@ -166,6 +267,20 @@
 
 .me-item:hover {
   border-color: var(--dsw-alias-border-l3);
+}
+
+/* 分组列表：一屏三列（用户反馈「分组太宽」）；窗口不够宽时自动降为 2 / 1 列。 */
+/* 分组两栏（2026-10-19 用户）：宽屏两列、窄屏一列；两列各自顶部对齐。 */
+.me-list-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .me-list-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .me-item-head {
@@ -325,7 +440,515 @@
 .me-item-actions {
   flex: none;
   display: flex;
+  align-items: center;
   gap: 6px;
+  /* 一行到底（用户 UI-19）：自动保存 / 注入下拉 / 提示词 / 保存 / 删除 永不换行，
+     控件自身不被压缩（窄窗口靠横向溢出，不把按钮挤到第二行）。 */
+  flex-wrap: nowrap;
+}
+
+.me-item-actions > * {
+  flex: none;
+}
+
+/* ---------- 配置页「工具」（2026-10-16 用户布局）---------- */
+
+/* 两列网格：一个工具一张卡片；2026-10-17 用户改为**一行一个**（单列）。 */
+.me-tools-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.me-tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* 卡片头：名称在左、#id 紧跟其后，按钮组锁最右。 */
+.me-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.me-tool-name {
+  flex: 0 1 240px;
+  min-width: 120px;
+}
+
+/* 分组行「一行到底」（2026-10-16 用户）：自动通过 / 启用 / 注入 / 提示词 / 保存 /
+   删除 尽量同一行；两栏后列更窄，允许换行（2026-10-19），高度统一 28px 与下拉框一致。 */
+.me-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.me-group-row > * {
+  flex: none;
+  font-size: 12px;
+}
+
+.me-group-row .me-btn,
+.me-group-row .mt-view-btn {
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.me-group-row .me-todo-select {
+  height: 28px;
+  box-sizing: border-box;
+  font-size: 12px;
+}
+
+/* 新建分组行里的 id 输入框（可编辑，留空自动分配）。 */
+.me-group-new-id {
+  flex: 0 1 170px;
+  min-width: 110px;
+}
+
+/* 分组行里可编辑的 #id（自建分组）：压缩到与元数据同高，内置分组仍是纯文本。 */
+.me-group-id-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.me-group-id-hash {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.me-todo-input.me-group-id {
+  flex: 0 1 128px;
+  min-width: 84px;
+  height: 26px;
+  padding: 2px 6px;
+  box-sizing: border-box;
+}
+
+/* 布局状态徽标（迁移未完成时醒目提示，写操作停用）。 */
+.me-badge-warn {
+  color: var(--dsw-alias-state-warning-primary, #b8860b);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #b8860b) 14%, transparent);
+}
+
+/* 顶部记忆根路径可能很长：一行截断，完整值走 title。 */
+.me-layout-bar .me-muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 开局提示词：两栏（2026-10-16 用户）---------- */
+
+/* 左＝内置文案（只读） / 右＝自定义文案（可编辑），两栏等高、各自内部滚动。 */
+.sp-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  /* 拖动改高时容器会实时变高，不要让它成为滚动锚点（否则整页 scrollTop 被回调）。 */
+  overflow-anchor: none;
+}
+
+@media (max-width: 1000px) {
+  .sp-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sp-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 开局提示词的两个框：高度只由 useSyncedBoxHeights 的 state 写（拖自绘手柄同步），
+   margin:0 是必须的 —— pre 有默认外边距，会把左栏整体压低，两栏就对不齐了。 */
+.sp-box {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+/* 储备文案（2026-10-19 用户改版）：两栏卡片，每张卡片只有「复制到文案 / 保存 / 删除」。 */
+.sp-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sp-presets-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  /* 拖动改高时卡片会实时变高，不要让它成为滚动锚点。 */
+  overflow-anchor: none;
+}
+
+@media (max-width: 1100px) {
+  .sp-presets-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sp-preset-name {
+  flex: 1 1 80px;
+  min-width: 48px;
+}
+
+.sp-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.sp-preset-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sp-preset-text-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.sp-preset-text-wrap .me-resize-handle {
+  right: 10px;
+  bottom: 10px;
+}
+
+/* 储备文案的文本框：与自定义文案同款样式（.me-item-edit）；高度由
+   useSyncedBoxHeights 的 state 写（拖右下角手柄，所有卡片联动）。 */
+.me-item-edit.sp-preset-text {
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+  resize: none;
+}
+
+/* 开局提示词的操作行：放在**两栏下方**（用户 2026-10-17），右对齐、不占栏内空间。 */
+.sp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.me-tool-id {
+  flex: none;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.me-tool-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.me-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 工具定义分块（2026-10-17 用户）：包在工具卡片内，**两列**，可整体折叠；
+   每块可勾启用 + 写文案 + 单独保存 + 恢复默认；未点保存前全部是暂存值。 */
+.me-tool-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 8px;
+}
+
+.me-tool-blocks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.me-tool-blocks-toggle {
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.me-tool-blocks-toggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.me-tool-blocks-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  /* 同 .sp-two-col：拖动改高时别当滚动锚点。 */
+  overflow-anchor: none;
+}
+
+@media (max-width: 900px) {
+  .me-tool-blocks-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.me-tool-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.me-tool-block-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.me-tool-block-check {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.me-tool-block-check span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me-tool-block-check input {
+  flex: none;
+}
+
+.me-tool-block-head .me-btn {
+  flex: none;
+  padding: 0 8px;
+  height: 22px;
+  font-size: 11px;
+}
+
+/* 块文案输入框：高度由 useSyncedBoxHeights 的 state 写（拖自绘手柄，同一行的两个一起变），
+   初始高度 = 2 行文字，见 ToolsPanel.tsx 的 BLOCK_BOX_H。这里**不要**写 min-height，
+   否则会把默认高度顶大。 */
+.me-tool-block-text {
+  width: 100%;
+  font-size: 11px;
+}
+
+/* ── 原生斜拉条一律关掉（2026-10-17）─────────────────────────────
+ * 浏览器原生 resize 是**浏览器自己在写元素高度**，而 React 又按受控 style.height
+ * 往同一元素写值 → 两个写入方抢同一个属性，框会在光标底下反复横跳；容器高度实时
+ * 变化还会触发滚动锚定把整页顶上去。所以改成自绘手柄（.me-resize-handle）+
+ * useSyncedBoxHeights：高度只有一个写入方。
+ * 特异性必须压过 .me-item-edit（它带 resize: vertical），故写成两段式选择器。 */
+.me-item-edit.sp-box,
+.me-item-edit.me-tool-block-text,
+.me-item-edit.me-tool-desc-text {
+  resize: none;
+  overflow-anchor: none;
+}
+
+/* 工具描述框的容器：给自绘手柄当定位父级（描述框不是卡片最后一个元素，
+   不能直接挂在卡片上做绝对定位）。display:flex 消掉 inline 基线留下的缝。 */
+.me-desc-wrap {
+  position: relative;
+  display: flex;
+}
+
+/* 自绘缩放手柄：压在框的右下角，替代原生斜拉条。 */
+.me-resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  cursor: ns-resize;
+  /* 触摸/触控笔：不禁掉浏览器的手势接管，pointerdown 之后会立刻收到 pointercancel，
+     拖动直接失效（本项目支持移动端）。 */
+  touch-action: none;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.75;
+  overflow-anchor: none;
+}
+
+/* 工具块与描述框的框带 8px 内边距，手柄要再往里挪，否则会露在框外。 */
+.me-tool-block .me-resize-handle,
+.me-desc-wrap .me-resize-handle {
+  right: 10px;
+  bottom: 10px;
+}
+
+.me-resize-handle::before,
+.me-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.me-resize-handle::before {
+  width: 12px;
+  height: 12px;
+}
+
+.me-resize-handle::after {
+  width: 6px;
+  height: 6px;
+}
+
+.me-resize-handle:hover {
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
+}
+
+/* 拖动中（类挂 <html> 上）：禁选中、光标保持竖向缩放、**关掉滚动锚定**。
+   overflow-anchor 的作用范围是滚动容器，不一定等于 panel 根节点，所以打在 <html>
+   上并用 !important 压过任何局部设置 —— 否则拖小时浏览器会回调 scrollTop，整页往上跳。 */
+.me-resizing,
+.me-resizing * {
+  user-select: none;
+  cursor: ns-resize !important;
+  overflow-anchor: none !important;
+}
+
+/* 当前完整定义（只读）：通用定义 + 分组段 + 各启用块的合并结果。 */
+.me-tool-merged {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.me-tool-default {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l3);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.me-tool-default-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.me-tool-default-label {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.me-tool-default-params {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.me-tool-param-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dsw-alias-label-primary);
+  margin-right: 6px;
+}
+
+.me-tool-custom-name {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.me-tool-custom-desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 新建工具区：四个字段两列排。 */
+.me-tool-new {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+@media (max-width: 900px) {
+  .me-tool-new {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .me-item-edit {
@@ -411,10 +1034,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.me-archive-list {
-  max-height: 320px;
-  overflow-y: auto;
-}
+/* 归档列表原为内滚区，按钮改为跟外层页面一起滚（用户 UI-6R）。 */
 
 .me-archive-content {
   margin: 0;
@@ -509,6 +1129,32 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── 注释 / 说明文字：统一字号（2026-10-17 用户要求）──────────────
+ * 用户原话：「今后所有注释改为和（界面里那种）小字一致」。
+ * 现役六个类全部统一到 11px + 三级文字色 —— **以后新增注释只能用这几个类**，
+ * 不要再写裸 <p> 或自造类名（此前 `me-hint` 压根没定义，字体继承成了 13~14px，
+ * 也就出现了"大小不一"）。
+ *   me-hint       通用单行提示（工具页顶部锁定说明等）
+ *   me-help       段落式说明（配置页 intro 之类）
+ *   me-muted      弱化信息行（路径、加载中）
+ *   me-field-hint 字段级说明（跟在标签后的小字）
+ *   me-field-sub  次级分组标题/行
+ *   mt-muted      记忆/待办页里的弱化行
+ * 只统一字号/行高/颜色，各自动的 margin/padding 保持原样。 */
+.me-hint,
+.me-help,
+.me-muted,
+.me-field-hint,
+.me-field-sub,
+.mt-muted {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  /* 注释不带自己的间距（2026-10-17 用户要求：删掉间距与上下空行）。 */
+  margin: 0;
+  padding: 0;
 }
 
 /* ── 长文本防溢出（issue #31，2026-09-04）────────────────────────
@@ -613,8 +1259,41 @@
   border-color: var(--dsw-alias-border-l4);
 }
 
+/* 下拉框宽度按**最长选项文字**自适应（2026-10-16 用户）：width:auto 交给浏览器
+   按 option 算宽，min-width 只是下限；窄容器里最多占满一行。 */
 .me-select {
+  width: auto;
+  min-width: 120px;
+  max-width: 100%;
   cursor: pointer;
+}
+
+/* 下拉框统一外观（2026-10-19 用户）：me-select / me-todo-select / me-todo-date
+   原来高度、边框、字号各不相同，这里统一到同一套（后定义覆盖前面）。 */
+.me-select,
+.me-todo-select,
+.me-todo-date {
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  flex: none;
+  width: auto;
+  min-width: 96px;
+  max-width: 100%;
+}
+
+.me-select:hover,
+.me-todo-select:hover,
+.me-todo-date:hover {
+  border-color: var(--dsw-alias-border-l4);
 }
 
 .me-actions {
@@ -658,24 +1337,25 @@
 
 /* ---------- Scrollbars (token-driven, fall back to border color) ---------- */
 
-.me-panel::-webkit-scrollbar,
-.me-list::-webkit-scrollbar {
+/* 内滚动只剩单条正文与纯文本视图（用户 UI-6R），滚动条样式照 token 走。 */
+.mt-entry-text::-webkit-scrollbar,
+.mt-content::-webkit-scrollbar {
   width: 8px;
 }
 
-.me-panel::-webkit-scrollbar-thumb,
-.me-list::-webkit-scrollbar-thumb {
+.mt-entry-text::-webkit-scrollbar-thumb,
+.mt-content::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: var(--dsw-alias-scrollbar-bg-l1, var(--dsw-alias-border-l3));
 }
 
-.me-panel::-webkit-scrollbar-thumb:hover,
-.me-list::-webkit-scrollbar-thumb:hover {
+.mt-entry-text::-webkit-scrollbar-thumb:hover,
+.mt-content::-webkit-scrollbar-thumb:hover {
   background: var(--dsw-alias-scrollbar-hover-l1, var(--dsw-alias-border-l4));
 }
 
-.me-panel::-webkit-scrollbar-track,
-.me-list::-webkit-scrollbar-track {
+.mt-entry-text::-webkit-scrollbar-track,
+.mt-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -715,9 +1395,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 6px 12px 12px;
-  overflow-y: auto;
-  height: 100%;
+  /* 顶部不留内边距（用户 UI-10：记忆/待办/设置顶部那行与最上方的边距删掉，
+     页签行直接贴到内容区顶端）。 */
+  padding: 0 12px 12px;
+  /* **不再做内层滚动**（用户 UI-6）：`position: sticky` 只对"最近的滚动祖先"生效，
+     面板自己滚动时顶栏只认面板；一旦内容超出到外层滚动容器，顶栏就跟着滚走了。
+     去掉内层滚动 + 高度约束后，内容自然撑开、由外层容器滚，顶栏对外层也能吸附。
+     顺带消除"有的页签行下方多一道空隙"（那是内滚动条出现与否造成的）。 */
   box-sizing: border-box;
 }
 
@@ -726,11 +1410,6 @@
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.5;
-}
-
-.mt-notice-ok {
-  color: var(--dsw-alias-state-success-primary);
-  background: var(--dsw-alias-state-success-tertiary);
 }
 
 .mt-notice-error {
@@ -1038,7 +1717,8 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 320px;
+  /* 纯文本视图（整份文件）仍可内滚，阈值与单条正文对齐（用户 UI-6R）。 */
+  max-height: 400px;
   overflow-y: auto;
 }
 
@@ -1059,6 +1739,13 @@
   padding: 0;
   border-bottom: 1px solid var(--dsw-alias-interactive-bg-hover);
   margin-bottom: 10px;
+  /* 页签行固定悬浮（用户 UI-6R）：面板不再内滚后，sticky 的最近滚动祖先是
+     DSH 会话区的外层滚动容器（[data-conversation-scroll]），滚动时这行始终
+     贴顶。背景必须不透明，否则下面的内容会从字缝里透出来。 */
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--dsw-alias-bg-base);
 }
 
 .mt-file-tab {
@@ -1071,6 +1758,10 @@
   color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 13px;
+  /* 字重固定：激活态若加粗，同一个页签文字宽度会变，切换时整排按钮与
+     右侧的「停用：显示/隐藏」都会横移（用户实测"按钮和字体好像会移位"）。
+     激活改用背景 + 颜色区分，不再动字重。 */
+  font-weight: 500;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
@@ -1084,7 +1775,7 @@
 .mt-file-tab-active:hover {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-brand-primary);
-  font-weight: 600;
+  /* 刻意不加 font-weight（见 .mt-file-tab 注释）：改字重会让整排页签横移。 */
 }
 
 /* Vertical divider between the feature tabs and the file tabs. */
@@ -1095,6 +1786,19 @@
   height: 16px;
   margin: 0 4px;
   background: var(--dsw-alias-border-l3);
+}
+
+/* 一级页签行（记忆/待办页签顶部那排）与紧随其后的二级页签行之间收紧间距。
+   注意**不要用负 margin 去拉近**：一级页签在窄窗口会换行，负 margin 会让换行后的
+   第二行与二级行视觉重叠，看起来就像"某个页签不见了"（用户实测）。这里改成
+   把一级行自身的外边距调小，间距变小但不产生任何重叠。 */
+.mt-file-tabs-primary {
+  margin-bottom: 4px;
+}
+
+/* 停用分组的显示二态：靠页签行最右端（用户要求「两个选项放右上角」）。 */
+.mt-tab-actions-right {
+  margin-left: auto;
 }
 
 /* Pending-count badge inside a feature tab (e.g. 待确认记忆建议 (2)). */
@@ -1189,6 +1893,12 @@
   background: var(--dsw-alias-state-business-tertiary);
 }
 
+/* 当前 git 分支徽章：原先混在分组说明行里，说明行删除后独立成徽章（用户 UI-14）。 */
+.mt-badge-branch {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 /* Friendly empty state (no search results) */
 .mt-empty {
   margin: 0;
@@ -1207,8 +1917,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 .mt-entry {
@@ -1302,13 +2010,89 @@
   border-color: var(--dsw-alias-state-error-secondary);
 }
 
+/* 条目的展开 / 收起箭头（F-8②）：图标就是两个箭头，不额外装饰。 */
+.mt-entry-toggle {
+  appearance: none;
+  flex: none;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mt-entry-toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 拖拽条目下边缘改高度（F-8③）：一条细线，鼠标移上去变成上下箭头。 */
+.mt-entry-resize {
+  flex: none;
+  height: 8px;
+  margin-top: 2px;
+  border-radius: 4px;
+  cursor: ns-resize;
+  background: linear-gradient(
+    to bottom,
+    transparent 3px,
+    var(--dsw-alias-border-l3) 3px,
+    var(--dsw-alias-border-l3) 5px,
+    transparent 5px
+  );
+}
+
+.mt-entry-resize:hover {
+  background: linear-gradient(
+    to bottom,
+    transparent 3px,
+    var(--dsw-alias-interactive-fg-default) 3px,
+    var(--dsw-alias-interactive-fg-default) 5px,
+    transparent 5px
+  );
+}
+
 .mt-entry-text {
   margin: 0;
+  /* 单条正文是唯一允许内滚的地方（用户 UI-6R）：默认最多 400px（约 20 行）。
+     折叠 / 预览 / 拖拽高度（F-8）用内联 max-height 覆盖它。 */
+  max-height: 400px;
+  overflow-y: auto;
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--dsw-alias-label-primary);
+}
+
+/* 条目元数据行（用户 F-7）：时间戳右侧平铺，整行撑满，放不下就省略号。 */
+.mt-entry-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mt-entry-meta > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mt-entry-meta-title {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.mt-entry-meta-keywords {
+  color: var(--dsw-alias-state-business-primary);
 }
 
 /* 条目正文编辑框（美观视图「编辑」）：只改内容，标记程序维护 */
@@ -1351,23 +2135,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Entry list scrollbar (token-driven, fall back to border color) */
-.mt-entries::-webkit-scrollbar {
-  width: 8px;
-}
-
-.mt-entries::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: var(--dsw-alias-scrollbar-bg-l1, var(--dsw-alias-border-l3));
-}
-
-.mt-entries::-webkit-scrollbar-thumb:hover {
-  background: var(--dsw-alias-scrollbar-hover-l1, var(--dsw-alias-border-l4));
-}
-
-.mt-entries::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* 条目列表不再内滚（用户 UI-6R），原滚动条样式随之删除。 */
 
 /* 分页器（美观视图大文件分页，2026-08-10） */
 .mt-pager {
@@ -1433,8 +2201,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.me-todo-select,
-.me-todo-date,
+/* .me-todo-filters 里的 select 不走统一规则（体积更小），单独保留外观。 */
 .me-todo-filters select {
   border: 1px solid var(--dsw-alias-border-l, rgba(128, 128, 128, 0.3));
   border-radius: 6px;
@@ -1442,6 +2209,17 @@
   font-size: 12px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+  flex: none;
+  width: auto;
+  max-width: 100%;
+}
+
+/* 只留布局约束，尺寸交给上面的统一规则（避免把 padding/border 改回去）。 */
+.me-todo-select,
+.me-todo-date {
+  flex: none;
+  width: auto;
+  max-width: 100%;
 }
 
 .me-todo-filters {
@@ -1497,6 +2275,10 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--dsw-alias-label-primary);
+  /* 与记忆条目同款（用户 UI-6R + F-8）：默认最多 400px 且内部可滚；
+     折叠 / 预览 / 拖拽高度用内联 max-height 覆盖。 */
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .me-todo-edit {
@@ -1693,9 +2475,6 @@
 }
 
 .me-todo-quad-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1898,11 +2677,9 @@
  * mt-models-* 前缀，token 与风格与现有 mt- 类一致（不自建样式体系）。
  * 表格 + 行内配置（启用开关 / 思考等级标签与编辑器 / 备注输入）。 */
 
-/* 表格滚动容器（表格可能超出面板高度）。 */
+/* 表格滚动容器（模型页）。2026-10-15 用户 UI-6R 追加：**不再内滚**，表格跟外层
+   页面一起滚（与「只留单条内容内滚」的口径统一）。 */
 .mt-models-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-base);
@@ -2180,4 +2957,90 @@
 .me-notes-pre {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 待办页签里的「类」分段标签（2026-10-15 三类改造：页签按类分段显示） */
+.me-todo-class {
+  align-self: center;
+  margin: 0 6px 0 2px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: .75;
+}
+
+/* 待办三级改造（2026-10-15）：搜索框单独一行。
+   筛选行（.me-todo-filters）不换行，把 flex:1 的搜索框塞进去会挤压其它控件。 */
+.me-todo-search-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.me-todo-search-row .mt-search {
+  max-width: 340px;
+}
+
+/* ---- 一级 + 二级页签同处第一行（2026-10-15 UI-3）----
+   要点：页签区可横向溢出滚动（**绝不换行掉到第二行**），操作区锁定最右。
+   页签一旦换行，靠后的页签（如「开局提示词」）会被挤到第二行并与下面的内容
+   粘连，用户实测表现为「那个页签不见了」。 */
+.mt-tabs-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 0;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 页签一侧：flex:1 搭配 min-width:0 才允许内容溢出；nowrap = 永不换行 */
+.mt-tabs-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mt-tabs-scroll::-webkit-scrollbar {
+  height: 0;
+}
+
+/* 操作一侧：永不被压缩、永不换行 —— 页签溢出时它仍钉在第一行最右 */
+.mt-tabs-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 分组行头（2026-10-15 UI-8）：名称框是可被挤压的一方，元数据（类 / 内置 / #id）
+   固定在行尾并保持一行 —— 此前名称框写死 flex:1 1 180px 且允许换行，窄卡片里
+   元数据会被挤到第二行。 */
+.me-group-name {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.me-group-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* 设置页的页签行下面不必再叠加外边距：`.mt-panel` 的 gap 已经提供了行距，
+   两者叠加会在悬浮顶栏下方多出一段空白（用户反馈「下方有一段空白」）。
+   记忆 / 待办页签用的是 `.mt-tabs-bar`，不受这条影响。 */
+.mt-panel > .mt-file-tabs {
+  margin-bottom: 0;
 }

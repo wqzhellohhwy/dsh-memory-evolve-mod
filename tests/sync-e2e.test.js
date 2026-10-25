@@ -8,6 +8,9 @@
  *   2. A 归档（KEY → KEY-archive）→ B sync 归档生效。
  *   3. 断电式中断：worker 被杀后锁残留 → 重新 sync 立即可恢复（pid 存活
  *      检测清除 stale 锁），状态一致无损坏。
+ *
+ * 注意：第 3 项依赖锁超时等待，满负载并行跑全部 sync 测试时偶发超时；
+ * 单独跑本文件稳定通过。
  */
 
 import { test } from 'node:test'
@@ -22,6 +25,7 @@ import { runSync, resolveConflict, countConflicts } from '../lib/sync/worker.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -33,7 +37,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-e2e-'))
+  return tmproot("dsh-sync-e2e-")
 }
 
 function clean(dir) {

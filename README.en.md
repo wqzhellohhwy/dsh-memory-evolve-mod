@@ -4,7 +4,7 @@
 >
 > This guide is organized around real workflows. Each scenario explains "who it's for, what it can do, how to use it, and what you get."
 >
-> Related docs: [Detailed feature guide](README-详细说明.md) · [Memory sync](docs/记忆同步.md) · [Changelog](docs/CHANGELOG.en.md) · [中文](README.md)
+> Related docs: [Detailed feature guide](README-详细说明.md) · [Memory sync](docs/记忆同步.md) · [Changelog](docs/CHANGELOG.md) · [中文](README.md)
 
 ---
 
@@ -271,7 +271,7 @@ The prompt library is an **instruction-paradigm asset library**: code review, de
 ## Other Capabilities (One-Line Index)
 
 - **Skill self-evolution**: repeatedly-hit methodologies auto-solidify into skills, so similar tasks execute by the process next time;
-- **Skill management**: browse / search / disable / edit all skills in the Memory tab, add custom skill directories (the original standalone dsh-skills-manager plugin is merged into this plugin; legacy users uninstall the old plugin first per the install doc);
+- **Skill management**: the graphical skill-management sub-tab was retired at the user's request; skills are still created / read / patched / listed through the `skill_manage` tool;
 - **Infinite Canvas**: gather scattered files / text / images / audio-video onto one infinite canvas — local path reference, single board + view filtering (session / project / global), direct preview / copy / reference in-canvas; the AI can also read canvas material by id and place notes in the board's center area (de_canvas);
 - **Session search**: let the AI search other AI tools' (e.g. Codex) historical sessions on this machine — "did XX in Codex before", just ask;
 - **Model config**: the plugin maintains each model's enable status, thinking level, and notes, and marks **image-input support** (🖼 marker, clear at a glance when the AI picks a model);

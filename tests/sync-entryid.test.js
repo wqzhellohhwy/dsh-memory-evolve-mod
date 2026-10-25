@@ -22,10 +22,11 @@ import {
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-entryid-'))
+  return tmproot("dsh-sync-entryid-")
 }
 
 function clean(dir) {
@@ -93,15 +94,17 @@ test('ensureEntryIds：确定性补发（同内容 → 同 ID），已带 ID 不
 
 /* ---------------- store.js 集成：默认路径零变化 ---------------- */
 
-test('entryIdMode=off（默认）：add 不生成 ID，splitEntryHead 行为不变', () => {
+test('v2：id 是每条的永久身份（entryIdMode=off 也生成），splitEntryHead 行为不变', () => {
   const dir = tempDir()
   try {
     const store = new MemoryStore(dir)
     store.add('key', '项目决策 A', { session: { header: { cwd: '/work/x' } } })
     const entries = store.entriesOf('key', { session: { header: { cwd: '/work/x' } } })
     assert.equal(entries.length, 1)
-    assert.doesNotMatch(entries[0], /^\[id:/)
-    // splitEntryHead 不变：无 [id:] 时 head/body 与旧行为一致
+    // 2026-10-15「一条记忆一个 md」起，id 是文件身份与跨设备合并的锚点，
+    // 不再受 entryIdMode 开关影响（renderSnapshot 仍会在展示时剥掉它）。
+    assert.match(entries[0], /^\[id:[0-9a-f]{8}\] /)
+    // splitEntryHead 不变：head/body 解析与旧行为一致
     const { head, body } = splitEntryHead('[2026-08-11] 内容', 'memory')
     assert.equal(head, '[2026-08-11] ')
     assert.equal(body, '内容')
@@ -121,7 +124,7 @@ function syncInit(dir, cwd = '/work/x') {
   writeFileSync(join(projectDir, 'PROVENANCE'), JSON.stringify({ projectId: 'aaaaaaaaaaaa', displayName: 'x', version: 1 }) + '\n')
 }
 
-test('entryIdMode=on：key/project 轨 add 生成随机 ID；memory 轨不生成（一期仅项目轨）', () => {
+test('v2：key/project/memory 各轨 add 都生成 id（身份是通用的，不再限项目轨）', () => {
   const dir = tempDir()
   try {
     syncInit(dir)
@@ -135,7 +138,7 @@ test('entryIdMode=on：key/project 轨 add 生成随机 ID；memory 轨不生成
     assert.ok(r1.ok && r2.ok && r3.ok)
     assert.match(keyEntries[0], /^\[id:[0-9a-f]{8}\] \[/)
     assert.match(projectEntries[0], /^\[id:[0-9a-f]{8}\] \[/)
-    assert.doesNotMatch(memoryEntries[0], /^\[id:/)
+    assert.match(memoryEntries[0], /^\[id:[0-9a-f]{8}\] \[/)
     // ID 随机：两条不同内容 ID 不同
     assert.notEqual(extractEntryId(keyEntries[0]), extractEntryId(projectEntries[0]))
   } finally {

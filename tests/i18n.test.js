@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -30,6 +30,7 @@ import { reviewStatusTool, suggestToolDefinition, reviewTurnCounter } from '../l
 import { todoToolDefinition, TodoStore } from '../lib/todo.js'
 import { skillManageTool } from '../lib/skills.js'
 import { SuggestionQueue } from '../lib/store.js'
+import { tmproot } from './_tmp.js'
 
 const ALL_DICTS = [
   ['MEMORY', MEMORY_DICT],
@@ -43,11 +44,43 @@ const ALL_DICTS = [
 ]
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'i18n-test-'))
+  return tmproot("i18n-test-")
 }
 
 function clean(dir) {
   rmSync(dir, { recursive: true, force: true })
+}
+
+/** 本地日期（store 的日志型日期目录按本地日期分，不能用 UTC 的 toISOString）。 */
+function localDate() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/**
+ * v2：今日日志落在 `<memoryDir>/global/daily/<本地日期>/`，**一个 md 一条**，
+ * 所以读"当天日志全文"= 拼该目录下的全部 md。
+ */
+function dailyTextOf(memoryDir, date) {
+  const dir = join(memoryDir, 'global', 'daily', date)
+  try {
+    return readdirSync(dir)
+      .filter((name) => name.endsWith('.md'))
+      .map((name) => readFileSync(join(dir, name), 'utf8'))
+      .join('\n')
+  } catch {
+    return ''
+  }
+}
+
+/** v2：出厂全部 `inject: false`，要断言"某分组进快照"必须先显式打开。 */
+function enableInject(dir, ids) {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'groups.json'), JSON.stringify({
+    version: 2,
+    groups: ids.map((id) => ({ kind: 'memory', id, inject: true })),
+  }, null, 2))
 }
 
 test('every dictionary key carries a non-empty zh/en pair', () => {
@@ -150,14 +183,14 @@ test('feedback line renders in both locales', async () => {
     { action: 'add', target: 'daily', content: 'shipped the parser', feedback: { sentiment: 'positive', category: 'Coding/Backend', quote: 'great work!', note: 'clean fix' } },
     fakeExec(),
   )
-  const daily = readFileSync(join(config.memoryDir, `daily/${new Date().toISOString().slice(0, 10)}.md`), 'utf8')
+  const daily = dailyTextOf(config.memoryDir, localDate())
   assert.ok(daily.includes('[Feedback]sentiment:positive | category:Coding/Backend | quote:"great work!" | note:clean fix'), daily)
   setLocale('zh')
   await tool.execute(
     { action: 'add', target: 'daily', content: 'hoàn tất parser', feedback: { sentiment: 'negative', category: '编程/后端' } },
     fakeExec(),
   )
-  const dailyZh = readFileSync(join(config.memoryDir, `daily/${new Date().toISOString().slice(0, 10)}.md`), 'utf8')
+  const dailyZh = dailyTextOf(config.memoryDir, localDate())
   assert.ok(dailyZh.includes('【反馈】情绪:负面 | 分类:编程/后端'), dailyZh)
   clean(dir)
 })
@@ -167,19 +200,21 @@ test('renderSnapshot duties follow the active locale (legacy zh assertions keep 
   const config = resolveConfig({ memoryDir: dir })
   const store = new MemoryStore(config.memoryDir, config)
   const agent = { id: 'a', session: { header: { cwd: '/proj/x' } } }
+  // v2：key 出厂 inject=false，要断言其段落与内容进快照必须先打开
+  enableInject(dir, ['key'])
   store.add('key', 'X 项目的长期约定', agent)
   setLocale('zh')
   const zhSnap = renderSnapshot(config, store, agent)
   assert.ok(zhSnap.includes('## 记忆 memory-evolve'))
   assert.ok(zhSnap.includes('每轮收尾'))
   assert.ok(zhSnap.includes('每轮收尾分两步'))
-  assert.ok(zhSnap.includes('## 本项目关键记忆'))
+  assert.ok(zhSnap.includes('## 本工作区关键记忆'))
   setLocale('en')
   const enSnap = renderSnapshot(config, store, agent)
   assert.ok(enSnap.includes('## Memory memory-evolve'), enSnap.slice(0, 400))
   assert.ok(enSnap.includes('End of every turn'))
   assert.ok(enSnap.includes('in two steps'))
-  assert.ok(enSnap.includes("This project's key memories"))
+  assert.ok(enSnap.includes("This workspace's key memories"))
   assert.ok(enSnap.includes('X 项目的长期约定'), 'entry content itself is never translated')
   assert.ok(!enSnap.includes('每轮收尾'))
   setLocale('zh')
@@ -208,11 +243,12 @@ test('todo + skill tool descriptions follow the locale', () => {
   const todoStore = new TodoStore(config.memoryDir)
   setLocale('en')
   const todo = todoToolDefinition(config, todoStore)
-  assert.ok(todo.description.startsWith('Todo management (four tracks'))
+  // 描述 2026-10-16 重写为「总述 + 分块」，这里只锚定总述的首句（分块单测见 tool-blocks.test.js）。
+  assert.ok(todo.description.startsWith('Todo management: CRUD'))
   const skill = skillManageTool({}, config)
   assert.ok(skill.description.startsWith('Manage the skill library'))
   setLocale('zh')
-  assert.ok(todoToolDefinition(config, todoStore).description.startsWith('待办管理（四轨'))
+  assert.ok(todoToolDefinition(config, todoStore).description.startsWith('待办管理：'))
   clean(dir)
 })
 

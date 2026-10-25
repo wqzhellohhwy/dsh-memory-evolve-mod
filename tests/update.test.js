@@ -16,6 +16,7 @@
  * 不触碰真实 remote（实施文档 P1-6）。
  */
 import { test } from 'node:test'
+import { tmproot } from './_tmp.js'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -37,13 +38,17 @@ import {
 // 没有 callback，成功时 Promise 永不 resolve，会导致测试挂起）。
 const realRun = promisify(execFile)
 
-/** git 同步执行助手（测试基建用）。 */
+/**
+ * git 同步执行助手（测试基建用）。
+ * 强制 init.defaultBranch=main：本机系统级配置可能是 master，而用例按 main
+ * 建仓/推送，不让测试结果依赖运行机器的全局 git 配置。
+ */
 function sh(dir, args) {
-  return execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
+  return execFileSync('git', ['-c', 'init.defaultBranch=main', ...args], { cwd: dir, encoding: 'utf8' }).trim()
 }
 
 function tempRoot() {
-  return mkdtempSync(join(tmpdir(), 'dsh-update-test-'))
+  return tmproot("dsh-update-test-")
 }
 
 /**

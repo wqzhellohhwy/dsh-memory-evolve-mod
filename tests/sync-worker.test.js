@@ -23,6 +23,7 @@ import { runSync, runStatus, countConflicts } from '../lib/sync/worker.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -34,7 +35,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-worker-'))
+  return tmproot("dsh-sync-worker-")
 }
 
 function clean(dir) {

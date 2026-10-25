@@ -28,6 +28,7 @@ import { resolveConfig, validateRuntimePatch, RUNTIME_KEYS } from '../lib/index.
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 1x1 透明 PNG 的 base64（真实可解码的最小 PNG）。 */
@@ -35,7 +36,7 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 
 /** 临时广播目录（每个用例独立，自动清理）。 */
 function tempDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'bcast-img-'))
+  const dir = tmproot("bcast-img-")
   return dir
 }
 

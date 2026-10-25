@@ -22,6 +22,7 @@ import { resolveProjectId } from '../lib/sync/identity.js'
 import { runSync, resolveConflict, countConflicts } from '../lib/sync/worker.js'
 import { TodoStore, TODO_HEADER } from '../lib/todo.js'
 import { projectHash } from '../lib/store.js'
+import { tmproot } from './_tmp.js'
 
 function gitAvailable() {
   try {
@@ -32,7 +33,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-todo-'))
+  return tmproot("dsh-sync-todo-")
 }
 
 function clean(dir) {
@@ -46,6 +47,17 @@ function git(dir, args) {
 }
 
 const skip = !gitAvailable()
+
+/**
+ * v2 项目待办的落盘位置（2026-10-15 三类改造）：`<仓库根>/todo/TODOS-<组id>.md`，
+ * 顺带把目录建好——本测试直接在该位置写文件来驱动同步。
+ * @param {string} dir - 仓库/记忆目录。
+ * @returns {string} 待办文件绝对路径。
+ */
+function todoPath(dir) {
+  mkdirSync(join(dir, 'todo'), { recursive: true })
+  return join(dir, 'todo', 'TODOS-project.md')
+}
 
 /** todo.js 风格的 TODOS.md 文件（header + \n§\n + 条目）。 */
 function todoFile(lines) {
@@ -96,11 +108,12 @@ test('TodoStore projectDirResolver：项目待办路径跟随 sync 目录（proj
     const resolver = () => syncDir // 简化：直接返回 sync 目录
     const plain = new TodoStore(memoryDir)
     const synced = new TodoStore(memoryDir, resolver)
-    assert.equal(plain.fileOf('project', '/tmp/work'), join(memoryDir, 'projects', projectHash('/tmp/work'), 'TODOS.md'))
-    assert.equal(synced.fileOf('project', '/tmp/work'), join(syncDir, 'TODOS.md'))
-    // 非项目轨不受 resolver 影响
-    assert.equal(synced.fileOf('life'), join(memoryDir, 'TODOS-life.md'))
-    assert.equal(synced.fileOf('work'), join(memoryDir, 'TODOS-work.md'))
+    // v3 布局：`todo/<组id>/project/<项目id>/TODOS.md`（项目 id 取项目目录末段）
+    assert.equal(plain.fileOf('project', '/tmp/work'), join(memoryDir, 'todo', 'project', 'project', projectHash('/tmp/work'), 'TODOS.md'))
+    assert.equal(synced.fileOf('project', '/tmp/work'), join(memoryDir, 'todo', 'project', 'project', 'ab12cd34ef56', 'TODOS.md'))
+    // 非项目轨不受 resolver 影响（v3：全局待办在 `<memoryDir>/todo/<组id>/global/` 下）
+    assert.equal(synced.fileOf('life'), join(memoryDir, 'todo', 'life', 'global', 'TODOS.md'))
+    assert.equal(synced.fileOf('work'), join(memoryDir, 'todo', 'work', 'global', 'TODOS.md'))
   } finally {
     clean(root)
   }
@@ -113,28 +126,28 @@ test('TODOS 同步：双设备并集，header 保留，条目完整', { skip }, 
   try {
     const { bare, dev, branch } = await setupE2E(root)
     // A 建一条项目待办并推送
-    writeFileSync(join(dev.A.dir, 'TODOS.md'), todoFile([TODO1]))
-    git(dev.A.dir, ['add', '-f', '--', 'TODOS.md'])
+    writeFileSync(todoPath(dev.A.dir), todoFile([TODO1]))
+    git(dev.A.dir, ['add', '-f', '--', 'todo/TODOS-project.md'])
     git(dev.A.dir, ['commit', '-q', '-m', 'memory: todo 1'])
     git(dev.A.dir, ['push', '-q', bare, `main:${branch}`])
     // TODOS.md 确实进了仓库历史（白名单生效）
-    assert.ok(git(dev.A.dir, ['ls-files']).split('\n').includes('TODOS.md'), 'TODOS.md 应在仓库跟踪中')
+    assert.ok(git(dev.A.dir, ['ls-files']).split('\n').includes('todo/TODOS-project.md'), 'TODOS.md 应在仓库跟踪中')
 
     // B 首次 sync：拿到 TODO + header 保留
     const r1 = await runSync({ dir: dev.B.dir, remoteBranch: branch })
     assert.equal(r1.ok, true)
-    const bTodo = readFileSync(join(dev.B.dir, 'TODOS.md'), 'utf8')
+    const bTodo = readFileSync(todoPath(dev.B.dir), 'utf8')
     assert.ok(bTodo.startsWith('<!--'), '文件头注释块应保留')
     assert.ok(bTodo.includes('第一件事'))
     assert.ok(bTodo.includes('[id: aaaa0000]'))
 
     // B 新增一条 → push → A 拿到并集
-    writeFileSync(join(dev.B.dir, 'TODOS.md'), todoFile([TODO1, TODO2]))
+    writeFileSync(todoPath(dev.B.dir), todoFile([TODO1, TODO2]))
     const r2 = await runSync({ dir: dev.B.dir, remoteBranch: branch, push: true })
     assert.equal(r2.ok, true)
     const r2a = await runSync({ dir: dev.A.dir, remoteBranch: branch })
     assert.equal(r2a.ok, true)
-    const aTodo = readFileSync(join(dev.A.dir, 'TODOS.md'), 'utf8')
+    const aTodo = readFileSync(todoPath(dev.A.dir), 'utf8')
     assert.ok(aTodo.includes('第一件事') && aTodo.includes('第二件事'), 'A 应拿到并集')
     assert.ok(aTodo.startsWith('<!--'), 'A 的 header 也应保留')
     assert.equal(countConflicts(dev.A.dir), 0)
@@ -150,8 +163,8 @@ test('TODOS 冲突：双侧改同一条 → conflict → resolve both → 收敛
   try {
     const { bare, dev, branch } = await setupE2E(root)
     // 基线：A 提交 TODO1 并推送
-    writeFileSync(join(dev.A.dir, 'TODOS.md'), todoFile([TODO1]))
-    git(dev.A.dir, ['add', '-f', '--', 'TODOS.md'])
+    writeFileSync(todoPath(dev.A.dir), todoFile([TODO1]))
+    git(dev.A.dir, ['add', '-f', '--', 'todo/TODOS-project.md'])
     git(dev.A.dir, ['commit', '-q', '-m', 'memory: todo base'])
     git(dev.A.dir, ['push', '-q', bare, `main:${branch}`])
     const r0 = await runSync({ dir: dev.B.dir, remoteBranch: branch })
@@ -160,21 +173,21 @@ test('TODOS 冲突：双侧改同一条 → conflict → resolve both → 收敛
     // A 改成 A 版；B 改成 B 版（同 id:aaaa0000 不同内容）
     const aVersion = '[2026-08-11 10:00] [id: aaaa0000] [q2] A 改的版本'
     const bVersion = '[2026-08-11 10:01] [id: aaaa0000] [q2] B 改的版本'
-    writeFileSync(join(dev.A.dir, 'TODOS.md'), todoFile([aVersion]))
-    git(dev.A.dir, ['add', '-f', '--', 'TODOS.md'])
+    writeFileSync(todoPath(dev.A.dir), todoFile([aVersion]))
+    git(dev.A.dir, ['add', '-f', '--', 'todo/TODOS-project.md'])
     git(dev.A.dir, ['commit', '-q', '-m', 'memory: todo A edit'])
     git(dev.A.dir, ['push', '-q', bare, `main:${branch}`])
-    writeFileSync(join(dev.B.dir, 'TODOS.md'), todoFile([bVersion]))
+    writeFileSync(todoPath(dev.B.dir), todoFile([bVersion]))
     const r1 = await runSync({ dir: dev.B.dir, remoteBranch: branch })
     assert.equal(r1.ok, true)
     assert.equal(r1.conflicts, 1, '同 id 双侧修改应产生冲突')
     // 冲突条目不落盘到 TODOS.md
-    assert.ok(!readFileSync(join(dev.B.dir, 'TODOS.md'), 'utf8').includes('改的版本'), '冲突条目不落盘')
+    assert.ok(!readFileSync(todoPath(dev.B.dir), 'utf8').includes('改的版本'), '冲突条目不落盘')
 
     // resolve both：两版都要（theirs 换新 id）
     const res = await resolveConflict({ dir: dev.B.dir, index: 1, choice: 'both' })
     assert.equal(res.ok, true)
-    const bTodo = readFileSync(join(dev.B.dir, 'TODOS.md'), 'utf8')
+    const bTodo = readFileSync(todoPath(dev.B.dir), 'utf8')
     assert.ok(bTodo.includes('A 改的版本') && bTodo.includes('B 改的版本'), '两版都应保留')
     assert.equal(countConflicts(dev.B.dir), 0)
     // header 仍保留
@@ -184,7 +197,7 @@ test('TODOS 冲突：双侧改同一条 → conflict → resolve both → 收敛
     git(dev.B.dir, ['push', '-q', bare, `main:${branch}`])
     const r2 = await runSync({ dir: dev.A.dir, remoteBranch: branch })
     assert.equal(r2.ok, true)
-    const aTodo = readFileSync(join(dev.A.dir, 'TODOS.md'), 'utf8')
+    const aTodo = readFileSync(todoPath(dev.A.dir), 'utf8')
     assert.ok(aTodo.includes('A 改的版本') && aTodo.includes('B 改的版本'), 'A 应拿到 resolve 后的两版')
     assert.equal(countConflicts(dev.A.dir), 0)
   } finally {

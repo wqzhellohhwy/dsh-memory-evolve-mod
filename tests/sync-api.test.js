@@ -18,10 +18,11 @@ import { installApi } from '../lib/api.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-api-'))
+  return tmproot("dsh-sync-api-")
 }
 
 /** Boot installApi with mock sync deps（focus 路由层行为）。 */

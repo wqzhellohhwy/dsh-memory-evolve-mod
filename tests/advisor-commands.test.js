@@ -8,6 +8,7 @@ import { validateRuntimePatch } from '../lib/index.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 最小 cordis ctx（commands 注册捕获）。 */
@@ -49,7 +50,7 @@ function makeCtx() {
 
 /** 命令测试台。 */
 function makeRig() {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-advisor-cmd-'))
+  const dir = tmproot("dsh-advisor-cmd-")
   const { ctx, agents, listeners, commands, llm } = makeCtx()
   const config = {
     advisorEnabled: true,

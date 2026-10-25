@@ -17,15 +17,16 @@
  */
 import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { mock, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { WsCoordStore, buildWsCoordBlock, wsToolDefinitions, installWsCoord } from '../lib/coi/ws-coord.js'
 import { PLUGIN_SOURCE_KIND } from '../lib/coi/source.js'
+import { tmproot } from './_tmp.js'
 
-/** 独立临时目录（每个测试隔离）。 */
+/** 独立临时目录（每个测试隔离，测试结束自动清理）。 */
 function tempDir() {
-  return join(tmpdir(), `dsh-ws-coord-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}`)
+  return tmproot('dsh-ws-coord-test-')
 }
 
 /** 构造 installWsCoord 的 fake ctx（effect 立即执行、on 记录监听器）。 */
@@ -83,7 +84,7 @@ test('declare：登记文件/服务 + TTL + 重复声明刷新 + conflicts 检�
   const first = store.declare({ sessionId: 'A', cwd: '/w', targets: [{ path: 'a.js', note: '重构' }], ttlSeconds: 60 })
   assert.equal(first.declared.length, 1)
   assert.equal(first.conflicts.length, 0)
-  assert.equal(first.declared[0].target, '/w/a.js')
+  assert.equal(first.declared[0].target, resolve('/w', 'a.js'), '相对路径按 cwd 解析成本机绝对路径')
   assert.equal(first.declared[0].kind, 'file')
   assert.equal(first.declared[0].source, 'declared')
   assert.ok(first.declared[0].expiresAt > Date.now())
@@ -171,7 +172,7 @@ test('clearObserved：只清自动登记锁，保留声明锁', async () => {
   store.clearObserved('A')
   const locks = store.list({ cwd: '/w' })
   assert.equal(locks.length, 1)
-  assert.equal(locks[0].target, '/w/a.js')
+  assert.equal(locks[0].target, resolve('/w', 'a.js'), '相对路径按 cwd 解析成本机绝对路径')
   assert.equal(locks[0].source, 'declared')
   rmSync(dir, { recursive: true, force: true })
 })

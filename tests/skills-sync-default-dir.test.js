@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BUILTIN_SKILLS, DEFAULT_SKILL_DIR, normalizeSkillText, syncBuiltinSkills } from '../lib/coi/skills-sync.js'
 import { resolveConfig } from '../lib/index.js'
+import { tmproot } from './_tmp.js'
 
 /** 插件包内 skills/ 目录（内置技能源头）。 */
 const PLUGIN_SKILLS_DIR = fileURLToPath(new URL('../skills/', import.meta.url))
@@ -66,7 +67,7 @@ test('内置技能清单与插件包内容一致（打包守卫：把静默的 m
 })
 
 test('syncBuiltinSkills：用插件包真实内容同步，五个技能全部落地且不含 missing', () => {
-  const userSkills = mkdtempSync(join(tmpdir(), 'me-skills-'))
+  const userSkills = tmproot("me-skills-")
   try {
     const first = syncBuiltinSkills(PLUGIN_SKILLS_DIR, userSkills)
     assert.equal(first.length, BUILTIN_SKILLS.length)
@@ -91,7 +92,7 @@ test('skillVersion 容忍 CRLF：x-version 升级在 Windows 检出上同样生�
   // 缺陷：旧写法 `^---\\n` 只认 LF，CRLF 的 SKILL.md 解析出 0——源与目标都取 0，
   // 版本门控退化成"永远相等"，x-version 升级在 Windows 上静默失效
   // （首次安装因目标不存在仍会复制，所以只有"升级不生效"这一半可见）。
-  const dir = mkdtempSync(join(tmpdir(), 'me-skills-crlf-'))
+  const dir = tmproot("me-skills-crlf-")
   const pluginSkills = join(dir, 'plugin-skills')
   const userSkills = join(dir, 'user-skills')
   const crlf = (version) => `---\r\nname: kimi-cli-calling\r\nx-version: ${version}\r\ndescription: 测试\r\n---\r\n# v${version}\r\n`

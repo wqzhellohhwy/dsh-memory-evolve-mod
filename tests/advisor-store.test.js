@@ -1,6 +1,7 @@
 import { test } from 'node:test'
+import { tmproot } from './_tmp.js'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appendFile } from 'node:fs/promises'
@@ -12,7 +13,7 @@ import { setLocale } from '../lib/i18n.js'
 setLocale('zh')
 
 function tempDir(tag) {
-  return mkdtempSync(join(tmpdir(), `dsh-advisor-${tag}-`))
+  return tmproot(`dsh-advisor-${tag}-`)
 }
 
 /** 内存文件系统（指令队列持久化注入）。 */

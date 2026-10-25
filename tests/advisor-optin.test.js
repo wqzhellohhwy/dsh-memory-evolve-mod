@@ -15,6 +15,7 @@ import { validateRuntimePatch } from '../lib/index.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 let seq = 0
@@ -101,7 +102,7 @@ function makeCtx() {
 }
 
 /** 装配 advisor 的测试台（dataDir 可固定传入，供持久化重建测试复用）。 */
-function makeRig(configOverrides = {}, dataDir = mkdtempSync(join(tmpdir(), 'dsh-advisor-optin-'))) {
+function makeRig(configOverrides = {}, dataDir = tmproot("dsh-advisor-optin-")) {
   const { ctx, agents, llm, listeners } = makeCtx()
   const config = {
     advisorEnabled: true,
@@ -197,7 +198,7 @@ test('总闸关：/advisor on 返回全局关闭提示', (t) => {
 })
 
 test('override 持久化：落盘 session-overrides.json，模块重建后恢复', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-advisor-optin-persist-'))
+  const dir = tmproot("dsh-advisor-optin-persist-")
   const rig = makeRig({}, dir)
   t.after(() => { rmSync(dir, { recursive: true, force: true }) })
   sessionRound(rig)

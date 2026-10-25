@@ -24,6 +24,7 @@ import { projectHash } from '../lib/store.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -35,7 +36,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-sync-index-'))
+  return tmproot("dsh-sync-index-")
 }
 
 function clean(dir) {
@@ -92,12 +93,13 @@ test('makeProjectDirResolver：已初始化 sync 项目 → projectId 目录；�
   try {
     const { cwd, memoryDir, identity } = await bootProject(root)
     const resolver = makeProjectDirResolver({ memoryDir })
-    // 已初始化：PROVENANCE 存在 → projectId 目录
+    // 本夹具是 v2 项目仓库（`<记忆根>/projects/<id>`，无 `.layout-version`）：
+    // resolver 按"PROVENANCE 在哪"定位，命中旧位置就继续返回旧目录（迁移兼容）。
     assert.equal(resolver(cwd), join(memoryDir, 'projects', identity.id))
-    // 未初始化项目：回退 projectHash
+    // 未初始化项目：v3 元数据根下按 projectHash 回退（新位置不存在 PROVENANCE）
     const plainCwd = join(root, 'no-git-project')
     mkdirSync(plainCwd, { recursive: true })
-    assert.equal(resolver(plainCwd), join(memoryDir, 'projects', projectHash(plainCwd)))
+    assert.equal(resolver(plainCwd), join(memoryDir, '.system', 'projects', projectHash(plainCwd)))
   } finally {
     clean(root)
   }

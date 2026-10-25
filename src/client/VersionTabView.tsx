@@ -23,6 +23,8 @@
  */
 import { useEffect, useState } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import { useToast } from './Toast.tsx'
+import { InlineError } from './InlineError.tsx'
 
 /** Locale-bound props（memory-evolve 命名空间）。 */
 export interface VersionTabViewProps {
@@ -56,12 +58,6 @@ interface UpdateOutcome {
   restartRequired?: boolean
 }
 
-/** 统一错误对象（code → 字典文案；message 兜底展示）。 */
-interface ViewError {
-  code: string
-  message: string
-}
-
 /** 刷新当前状态（force 走「检查更新」语义）。 */
 async function fetchStatus(force: boolean): Promise<UpdateState> {
   const res = await fetch(`/memory-evolve/api/update/status${force ? '?force=1' : ''}`)
@@ -88,21 +84,23 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
   const [checking, setChecking] = useState(false)
   /** 「立即更新」进行中。 */
   const [updating, setUpdating] = useState(false)
-  /** 统一错误对象（code 驱动字典文案；网络异常用 'network'）。 */
-  const [error, setError] = useState<ViewError | null>(null)
+  /** 一次性结果提示（右下角弹窗）；常驻的「等待重启」横幅仍留在页面内。 */
+  const notify = useToast(t)
+  /** 状态加载失败：页内常驻错误 + 重试（状态为 null 时整页按钮都禁用）。 */
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   /** 拉取状态并落屏（可选 force）。 */
   const refresh = (force: boolean): void => {
-    setError(null)
     if (force) setChecking(true)
     fetchStatus(force)
       .then((data) => {
+        setLoadError(null)
         setState(data)
         // 状态变化（红点 0/1）广播给宿主层：index.ts 的 badge 监听会同步
         // 各 Tab 红点（设置 Tab 的 🔴 由此出现/消失）。
         window.dispatchEvent(new CustomEvent('dsh-memory-evolve:badge-change'))
       })
-      .catch((err: unknown) => setError({ code: 'network', message: err instanceof Error ? err.message : 'network error' }))
+      .catch((err: unknown) => setLoadError(t('version.error.network', { message: err instanceof Error ? err.message : 'network error' })))
       .finally(() => setChecking(false))
   }
 
@@ -113,7 +111,6 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
   const doUpdate = (): void => {
     if (updating || !state?.latestTag) return
     setUpdating(true)
-    setError(null)
     void fetch('/memory-evolve/api/update', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -122,7 +119,7 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
       .then(async (res) => {
         const outcome = (await res.json()) as UpdateOutcome
         if (!res.ok || !outcome.ok) {
-          setError({ code: outcome.code ?? 'unknown', message: outcome.error ?? '' })
+          notify('error', t(`version.error.${outcome.code ?? 'unknown'}`, { message: outcome.error ?? '' }))
           return
         }
         // 成功：先落屏发布说明与"等待重启"（即使随后的状态刷新失败也
@@ -135,10 +132,9 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
         } catch {
           /* 状态刷新失败：保持"更新已完成"呈现，不覆盖为错误 */
         }
-        setError(null)
         window.dispatchEvent(new CustomEvent('dsh-memory-evolve:badge-change'))
       })
-      .catch((err: unknown) => setError({ code: 'network', message: err instanceof Error ? err.message : 'network error' }))
+      .catch((err: unknown) => notify('error', t('version.error.network', { message: err instanceof Error ? err.message : 'network error' })))
       .finally(() => setUpdating(false))
   }
 
@@ -149,6 +145,9 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
 
   return (
     <div className="me-panel">
+      {loadError !== null && (
+        <InlineError text={loadError} retryText={t('panel.retry')} onRetry={() => refresh(true)} />
+      )}
       {/* —— 等待重启横幅：服务端派生状态驱动，重挂/刷新后依然显示 —— */}
       {state?.restartRequired === true && (
         <div className="me-notice me-notice-warn" role="alert">
@@ -197,11 +196,6 @@ export function VersionTabView(props: VersionTabTabProps): JSX.Element {
           <button type="button" className="me-btn me-btn-primary" disabled={busy} onClick={doUpdate}>
             {updating ? t('version.updating') : t('version.updateNow', { tag: state.latestTag })}
           </button>
-        )}
-        {error && (
-          <p className="me-notice me-notice-error" role="alert">
-            {t(`version.error.${error.code}`, { message: error.message })}
-          </p>
         )}
       </div>
 

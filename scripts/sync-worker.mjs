@@ -73,6 +73,8 @@ async function main() {
       ? await runSync({ dir, remoteBranch: arg3, push, fileset: restArgs[0] ?? 'project', localBranch: restArgs[1] ?? 'main' })
       : await runStatus({ dir, remoteBranch: arg3 })
     process.stdout.write(JSON.stringify(result) + '\n')
+    // 退出码：0=成功 / 1=可恢复错误 / 3=需人工干预 /
+    // 2=布局未迁移 v3（同步门禁挡住；与迁移 CLI 的 2 语义不同，那个是"需 --allow-sync"）
     process.exitCode = result.code ?? (result.ok ? 0 : 1)
   } catch (error) {
     process.stdout.write(JSON.stringify({ ok: false, code: 1, message: `worker 异常：${error?.message ?? String(error)}` }) + '\n')

@@ -1,13 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
 import { MemoryStore } from '../lib/store.js'
+import { tmproot } from './_tmp.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-cfg-test-'))
+  return tmproot("dsh-memory-cfg-test-")
 }
 
 function clean(dir) {
@@ -55,6 +56,12 @@ test('功能验证：Web 面板改 keyProgressiveDisclosure → 新会话快照�
 
   // 两个项目各自的 key 条目（模拟"多个项目都有 key 记忆"）
   const store = new MemoryStore(dir)
+  // 2026-10-15 起所有分组出厂都是 inject:false（用户拍板"默认都不注入"），
+  // 本用例验证的是注入模式切换，先把 key 分组打开。
+  writeFileSync(join(dir, 'groups.json'), JSON.stringify({
+    version: 2,
+    groups: [{ kind: 'memory', id: 'key', inject: true }],
+  }, null, 2))
   const projA = { id: 'a', session: { header: { cwd: '/proj/alpha' } } }
   const projB = { id: 'b', session: { header: { cwd: '/proj/beta' } } }
   store.add('key', '[summary:甲项目约定] 甲项目的关键约定正文第一行，写得长一点才能验证摘要注入确实只用摘要', projA)

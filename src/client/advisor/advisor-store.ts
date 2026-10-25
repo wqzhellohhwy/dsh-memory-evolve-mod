@@ -6,6 +6,7 @@
  * 不自行保存第二份服务端状态，避免面板折叠/Tab 切换后出现数据分叉。
  */
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { toast } from '../Toast.tsx'
 
 /** index.ts 将 DSH 的 connection/reset 桥接为这个浏览器事件。 */
 export const ADVISOR_CONNECTION_RESET_EVENT = 'dsh-memory-evolve:advisor-connection-reset'
@@ -16,7 +17,7 @@ const API = '/memory-evolve/api/advisor'
 export const LEVEL_LABEL: Record<'global' | 'project' | 'session' | 'conversation', string> = {
   conversation: '本次评审会话约束',
   session: '本会话约束',
-  project: '本项目约束',
+  project: '本工作区约束',
   global: '全局约束',
 }
 const POLL_MS = 1_000
@@ -212,7 +213,8 @@ export interface AdvisorStoreSnapshot {
   unreadCount: number
   panelVisible: boolean
   lastActivityAt: number | null
-  notice: { kind: 'ok' | 'error'; text: string } | null
+  /** 宿主判定当前会话已结束（status/instructions/scopes/events 回 ended）：约束页显示不可用提示。 */
+  sessionEnded: boolean
 }
 
 const DEFAULT_FILTERS: AdvisorHistoryFilters = {
@@ -252,7 +254,19 @@ function initialSnapshot(sessionId: string): AdvisorStoreSnapshot {
     unreadCount: 0,
     panelVisible: false,
     lastActivityAt: null,
-    notice: null,
+    sessionEnded: false,
+  }
+}
+
+/** 宿主 API 错误：保留 HTTP 状态与业务 code（轮询要区分 BAD_SESSION / BAD_CURSOR）。 */
+class AdvisorApiError extends Error {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.status = status
+    this.code = code
   }
 }
 
@@ -267,7 +281,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     message?: string
     code?: string
   }
-  if (!res.ok) throw new Error(body.error ?? body.message ?? body.code ?? `HTTP ${res.status}`)
+  if (!res.ok) {
+    throw new AdvisorApiError(res.status, body.code ?? '', body.error ?? body.message ?? body.code ?? `HTTP ${res.status}`)
+  }
   return body as T
 }
 
@@ -329,6 +345,14 @@ export class AdvisorSessionStore {
   private recordsAbort: AbortController | null = null
   /** reset 后首次 after=0 是重放而非新到达，不能把旧卡片重复计入未读。 */
   private suppressUnreadUntilSynced = false
+  /** 最近一条提示（同文案 10 秒内去重：连接抖动会连续触发"连接已恢复"）。 */
+  private lastToast = { text: '', at: 0 }
+  /**
+   * 已结束的轮询（key = `sessionId::generation`）：宿主回 `{ended:true}`（会话不存在）
+   * 或旧宿主 400 `BAD_SESSION` 时登记，停止该会话这一代的轮询。
+   * start / resetCursorAndLive / 切会话 / 重连（generation++）都会清空并重开。
+   */
+  private endedPolls = new Set<string>()
 
   constructor(sessionId: string) {
     this.snapshot = initialSnapshot(sessionId)
@@ -351,6 +375,8 @@ export class AdvisorSessionStore {
   start(): void {
     if (this.started) return
     this.started = true
+    this.endedPolls.clear()
+    this.patch({ sessionEnded: false })
     this.installBrowserResetListeners()
     void this.refreshAll()
     this.schedulePoll(0)
@@ -388,8 +414,9 @@ export class AdvisorSessionStore {
    * connection/reset、重新联网、页面重新可见都从 after=0 重新对齐。
    * generation fence 与 AbortController 双保险：即使浏览器晚交付旧 Promise，也不会落库。
    */
-  resetCursorAndLive(notice?: string): void {
+  resetCursorAndLive(message?: string): void {
     this.generation += 1
+    this.endedPolls.clear()
     this.cursor = 0
     this.suppressUnreadUntilSynced = true
     this.pollAbort?.abort()
@@ -401,8 +428,15 @@ export class AdvisorSessionStore {
       eventsLoading: true,
       eventsError: null,
       lastActivityAt: null,
-      ...(notice === undefined ? {} : { notice: { kind: 'ok' as const, text: notice } }),
+      sessionEnded: false,
     })
+    if (message !== undefined) {
+      const now = Date.now()
+      if (message !== this.lastToast.text || now - this.lastToast.at > 10_000) {
+        this.lastToast = { text: message, at: now }
+        toast('ok', message)
+      }
+    }
     if (this.started) {
       void this.refreshStatus()
       void this.refreshInstructions()
@@ -410,8 +444,23 @@ export class AdvisorSessionStore {
     }
   }
 
+  /** ended 登记槽：按 (sessionId, generation) 生效，重连/重开后自动失效。 */
+  private endedKeyOf(sessionId: string, generation: number): string {
+    return `${sessionId}::${generation}`
+  }
+
+  /** 会话已结束/不存在：停这一代轮询。不是错误，**不写 eventsError**（不弹红条）。 */
+  private markPollEnded(generation: number, sessionId: string): void {
+    if (generation !== this.generation) return
+    this.endedPolls.add(this.endedKeyOf(sessionId, generation))
+    if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
+    this.pollTimer = null
+    this.patch({ eventsLoading: false, sessionEnded: true })
+  }
+
   private schedulePoll(delay: number): void {
     if (!this.started) return
+    if (this.endedPolls.has(this.endedKeyOf(this.snapshot.sessionId, this.generation))) return
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
     this.pollTimer = window.setTimeout(() => {
       this.pollTimer = null
@@ -421,23 +470,38 @@ export class AdvisorSessionStore {
 
   private async pollEvents(): Promise<void> {
     if (!this.started) return
+    const generation = this.generation
+    const sessionId = this.snapshot.sessionId
+    if (this.endedPolls.has(this.endedKeyOf(sessionId, generation))) {
+      this.patch({ eventsLoading: false })
+      return
+    }
     // 每轮创建新 controller，并先取消可能残留的旧请求。
     this.pollAbort?.abort()
     const controller = new AbortController()
     this.pollAbort = controller
-    const generation = this.generation
-    const sessionId = this.snapshot.sessionId
     const params = new URLSearchParams({
       sessionId,
       after: String(this.cursor),
       limit: String(LIVE_LIMIT),
     })
+    /** BAD_CURSOR：先把游标归零，本轮结束立刻重试（不等 POLL_MS）。 */
+    let retryNow = false
     try {
-      const data = await fetchJson<{ events: AdvisorLiveEvent[]; nextCursor: number; gap: boolean }>(
+      const data = await fetchJson<{
+        events: AdvisorLiveEvent[]
+        nextCursor: number
+        gap: boolean
+        ended?: boolean
+      }>(
         `/events?${params.toString()}`,
         { signal: controller.signal },
       )
       if (!this.started || controller.signal.aborted || generation !== this.generation) return
+      if (data.ended === true) {
+        this.markPollEnded(generation, sessionId)
+        return
+      }
 
       let rebuildSucceeded = true
       if (data.gap) {
@@ -451,11 +515,14 @@ export class AdvisorSessionStore {
       this.patch({ eventsLoading: false, ...(rebuildSucceeded ? { eventsError: null } : {}) })
     } catch (error) {
       if (!controller.signal.aborted && generation === this.generation) {
-        this.patch({ eventsLoading: false, eventsError: errorText(error) })
+        const code = error instanceof AdvisorApiError ? error.code : ''
+        if (code === 'BAD_SESSION') this.markPollEnded(generation, sessionId)
+        else if (code === 'BAD_CURSOR') { this.cursor = 0; retryNow = true }
+        else this.patch({ eventsLoading: false, eventsError: errorText(error) })
       }
     } finally {
       if (this.pollAbort === controller) this.pollAbort = null
-      if (this.started && generation === this.generation) this.schedulePoll(POLL_MS)
+      if (this.started && generation === this.generation) this.schedulePoll(retryNow ? 0 : POLL_MS)
     }
   }
 
@@ -557,10 +624,19 @@ export class AdvisorSessionStore {
 
   async refreshStatus(): Promise<void> {
     const sessionId = this.snapshot.sessionId
+    const generation = this.generation
     this.patch({ statusLoading: true, statusError: null })
     try {
-      const status = await fetchJson<AdvisorStatus>(`/status?sessionId=${encodeURIComponent(sessionId)}`)
+      const status = await fetchJson<AdvisorStatus & { ended?: boolean }>(
+        `/status?sessionId=${encodeURIComponent(sessionId)}`,
+      )
       if (sessionId !== this.snapshot.sessionId) return
+      if (status.ended === true) {
+        // 会话不存在：不是错误，不写 statusError；按 (sessionId, generation) 记 ended
+        this.patch({ statusLoading: false })
+        this.markPollEnded(generation, sessionId)
+        return
+      }
       this.patch({ status, statusLoading: false, statusError: null })
     } catch (error) {
       if (sessionId !== this.snapshot.sessionId) return
@@ -570,12 +646,19 @@ export class AdvisorSessionStore {
 
   async refreshInstructions(): Promise<void> {
     const sessionId = this.snapshot.sessionId
+    const generation = this.generation
     this.patch({ instructionsLoading: true, instructionsError: null })
     try {
-      const data = await fetchJson<{ pending: AdvisorInstruction[] }>(
+      const data = await fetchJson<{ pending: AdvisorInstruction[]; ended?: boolean }>(
         `/instructions?sessionId=${encodeURIComponent(sessionId)}`,
       )
       if (sessionId !== this.snapshot.sessionId) return
+      if (data.ended === true) {
+        // 会话不存在：不写 instructionsError；与 /events 同一 ended 规则
+        this.patch({ instructionsLoading: false })
+        this.markPollEnded(generation, sessionId)
+        return
+      }
       this.patch({ pending: data.pending, instructionsLoading: false, instructionsError: null })
     } catch (error) {
       if (sessionId !== this.snapshot.sessionId) return
@@ -595,15 +678,15 @@ export class AdvisorSessionStore {
       this.patch({
         pending: data.pending,
         instructionMutating: false,
-        // Q4：指令入队后立即触发问答评审（回答注入会话流），不再是"等待下一轮"
-        notice: { kind: 'ok', text: '指令已发送，Advisor 正在回答（回答会直接注入会话流）' },
       })
+      // Q4：指令入队后立即触发问答评审（回答注入会话流），不再是"等待下一轮"
+      toast('ok', '指令已发送，Advisor 正在回答（回答会直接注入会话流）')
     } catch (error) {
       this.patch({
         instructionMutating: false,
         instructionsError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
@@ -616,8 +699,8 @@ export class AdvisorSessionStore {
       })
       this.patch({
         instructionMutating: false,
-        notice: { kind: 'ok', text: `已新建评审会话（#${data.epoch}）——可在第一条指令中告知评审员背景信息` },
       })
+      toast('ok', `已新建评审会话（#${data.epoch}）——可在第一条指令中告知评审员背景信息`)
       // 2026-08-13 用户反馈：新建评审会话后实时流应清空（旧评审活动属于
       // 上一评审会话，已落盘 records.jsonl 在「记录」Tab 可查）——重置
       // 游标从 after=0 重新同步，后端已清该会话 live ring，只会拉到新
@@ -627,8 +710,8 @@ export class AdvisorSessionStore {
       this.patch({
         instructionMutating: false,
         instructionsError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
@@ -641,14 +724,14 @@ export class AdvisorSessionStore {
       await this.refreshInstructions()
       this.patch({
         instructionMutating: false,
-        notice: { kind: 'ok', text: `已清空 ${data.cleared} 条待消费指令` },
       })
+      toast('ok', `已清空 ${data.cleared} 条待消费指令`)
     } catch (error) {
       this.patch({
         instructionMutating: false,
         instructionsError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
@@ -663,14 +746,14 @@ export class AdvisorSessionStore {
       this.patch({
         status,
         statusLoading: false,
-        notice: { kind: 'ok', text: enabled ? '本会话 Advisor 已启用' : '本会话 Advisor 已停用' },
       })
+      toast('ok', enabled ? '本会话 Advisor 已启用' : '本会话 Advisor 已停用')
     } catch (error) {
       this.patch({
         statusLoading: false,
         statusError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
@@ -691,27 +774,34 @@ export class AdvisorSessionStore {
       this.patch({
         config: data.config,
         configSaving: false,
-        notice: { kind: 'ok', text: 'Advisor 设置已保存并生效' },
       })
+      toast('ok', 'Advisor 设置已保存并生效')
       await this.refreshStatus()
     } catch (error) {
       this.patch({
         configSaving: false,
         configError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
   /** 四层级约束读取（项目/会话/评审会话）。 */
   async refreshScopes(): Promise<void> {
     const sessionId = this.snapshot.sessionId
+    const generation = this.generation
     this.patch({ scopesLoading: true, scopesError: null })
     try {
-      const data = await fetchJson<{ scopes: AdvisorScopes }>(
+      const data = await fetchJson<{ scopes: AdvisorScopes; ended?: boolean }>(
         `/scopes?sessionId=${encodeURIComponent(sessionId)}`,
       )
       if (sessionId !== this.snapshot.sessionId) return
+      if (data.ended === true) {
+        // 会话不存在：不是错误，不写 scopesError；清空 scopes 让面板走 ended 提示（不显示可编辑表单）
+        this.patch({ scopes: null, scopesLoading: false })
+        this.markPollEnded(generation, sessionId)
+        return
+      }
       this.patch({ scopes: data.scopes, scopesLoading: false, scopesError: null })
     } catch (error) {
       if (sessionId !== this.snapshot.sessionId) return
@@ -730,14 +820,14 @@ export class AdvisorSessionStore {
       this.patch({
         scopes: data.scopes,
         scopesSaving: false,
-        notice: { kind: 'ok', text: `${LEVEL_LABEL[level]}已保存，下次评审立即生效` },
       })
+      toast('ok', `${LEVEL_LABEL[level]}已保存，下次评审立即生效`)
     } catch (error) {
       this.patch({
         scopesSaving: false,
         scopesError: errorText(error),
-        notice: { kind: 'error', text: errorText(error) },
       })
+      toast('error', errorText(error))
     }
   }
 
@@ -780,10 +870,6 @@ export class AdvisorSessionStore {
 
   setPanelVisible(visible: boolean): void {
     this.patch({ panelVisible: visible, ...(visible ? { unreadCount: 0 } : {}) })
-  }
-
-  clearNotice(): void {
-    if (this.snapshot.notice !== null) this.patch({ notice: null })
   }
 }
 

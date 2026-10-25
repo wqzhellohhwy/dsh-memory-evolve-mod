@@ -17,9 +17,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import { MemoryQueueView } from './MemoryQueueView.tsx'
 import { TodoView } from './TodoView.tsx'
-import { TabGuideView, type GuideSection } from './TabGuideView.tsx'
 
 /** 待办 Tab 的三个子功能：指南 / 待确认待办管理 / 待办。 */
 type TodosFeature = 'guide' | 'todo-suggestions' | 'todo'
@@ -32,68 +30,8 @@ export interface TodosTabViewProps {
 /** 跨重挂持久化的子 tab 选择（模块级：badge 刷新导致组件重挂后恢复）。 */
 let persistedTodosFeature: TodosFeature | null = null
 
-/**
- * 待办 Tab 专属指南内容（「指南」子 Tab）：
- * 详细介绍待办功能本身——四轨、如何添加、待确认待办管理、状态与筛选、
- * 智能视图与到期提醒。文案来自全局 locale（todosTab.guide.* 键组）。
- */
-function todosGuideSections(t: Translate): GuideSection[] {
-  return [
-    {
-      icon: '📋',
-      title: t('todosTab.guide.tracks.title'),
-      body: t('todosTab.guide.tracks.body'),
-      items: [
-        t('todosTab.guide.tracks.item1'),
-        t('todosTab.guide.tracks.item2'),
-        t('todosTab.guide.tracks.item3'),
-        t('todosTab.guide.tracks.item4'),
-      ],
-    },
-    {
-      icon: '➕',
-      title: t('todosTab.guide.add.title'),
-      body: t('todosTab.guide.add.body'),
-      items: [
-        t('todosTab.guide.add.item1'),
-        t('todosTab.guide.add.item2'),
-      ],
-    },
-    {
-      icon: '🔲',
-      title: t('todosTab.guide.pending.title'),
-      body: t('todosTab.guide.pending.body'),
-      items: [
-        t('todosTab.guide.pending.item1'),
-        t('todosTab.guide.pending.item2'),
-      ],
-    },
-    {
-      icon: '🎯',
-      title: t('todosTab.guide.attrs.title'),
-      body: t('todosTab.guide.attrs.body'),
-      items: [
-        t('todosTab.guide.attrs.item1'),
-        t('todosTab.guide.attrs.item2'),
-        t('todosTab.guide.attrs.item3'),
-      ],
-    },
-    {
-      icon: '📅',
-      title: t('todosTab.guide.view.title'),
-      body: t('todosTab.guide.view.body'),
-      items: [
-        t('todosTab.guide.view.item1'),
-        t('todosTab.guide.view.item2'),
-      ],
-    },
-    {
-      icon: '⏰',
-      title: t('todosTab.guide.remind.title'),
-      body: t('todosTab.guide.remind.body'),
-    },
-  ]
-}
+// 「指南」页签的内容与外壳页签已合并进 TodoView（用户 UI-11③）：todosGuideSections
+// 随之搬到那边。本文件只剩两件事：轮询待确认待办数、把外壳状态交给 TodoView。
 
 /** The conversation view todos tab component. */
 export function TodosTabView(props: ConvViewProps & TodosTabViewProps): JSX.Element {
@@ -127,54 +65,20 @@ export function TodosTabView(props: ConvViewProps & TodosTabViewProps): JSX.Elem
   }, [pollBadge])
 
   return (
-    <div className="mt-panel">
-      {/* 子 tab 条：指南 / 待确认待办管理 / 待办 */}
-      <div className="mt-file-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={feature === 'guide'}
-          className={feature === 'guide' ? 'mt-file-tab mt-file-tab-active' : 'mt-file-tab'}
-          onClick={() => setFeature('guide')}
-        >
-          {t('todosTab.feature.guide')}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={feature === 'todo-suggestions'}
-          className={feature === 'todo-suggestions' ? 'mt-file-tab mt-file-tab-active' : 'mt-file-tab'}
-          onClick={() => setFeature('todo-suggestions')}
-        >
-          {t('todosTab.feature.todoSuggestions')}
-          {todoSuggestionsCount > 0 && <span className="mt-feature-count">{todoSuggestionsCount}</span>}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={feature === 'todo'}
-          className={feature === 'todo' ? 'mt-file-tab mt-file-tab-active' : 'mt-file-tab'}
-          onClick={() => setFeature('todo')}
-        >
-          {t('todosTab.feature.todo')}
-        </button>
-      </div>
-      {feature === 'guide' ? (
-        <TabGuideView sections={todosGuideSections(t)} />
-      ) : feature === 'todo' ? (
-        <TodoView t={t} sessionId={String(sessionId)} />
-      ) : (
-        <MemoryQueueView
-          t={t}
-          feature="todo-suggestions"
-          onChanged={() => {
-            // 队列变更后：刷新本组件徽标，并通知宿主层（index.ts）立即重查
-            // badge，让会话页标签的小红点即时更新（不等 30s 轮询）。
-            pollBadge()
-            window.dispatchEvent(new CustomEvent('dsh-memory-evolve:badge-change'))
-          }}
-        />
-      )}
-    </div>
+    <TodoView
+      t={t}
+      sessionId={String(sessionId)}
+      shell={{
+        feature,
+        onFeature: setFeature,
+        suggestions: todoSuggestionsCount,
+        onChanged: () => {
+          // 队列变更后：刷新本组件徽标，并通知宿主层（index.ts）立即重查
+          // badge，让会话页标签的小红点即时更新（不等 30s 轮询）。
+          pollBadge()
+          window.dispatchEvent(new CustomEvent('dsh-memory-evolve:badge-change'))
+        },
+      }}
+    />
   )
 }

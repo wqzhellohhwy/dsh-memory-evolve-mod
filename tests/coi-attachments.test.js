@@ -29,6 +29,7 @@ import { resolveAttachments } from '../lib/coi/attachments.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 所有测试创建的调度器：统一 dispose，避免 flush 定时器挂住事件循环。 */
@@ -38,7 +39,7 @@ after(() => {
 })
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-coi-att-test-'))
+  return tmproot("dsh-coi-att-test-")
 }
 
 /** 可注入的 fake spawn：记录子进程，测试里手动触发输出/结束。 */
@@ -104,13 +105,9 @@ function makeImage(dir, name = 'shot.png') {
 
 test('buildArgs: flag-mode adapters insert image args before {task}', () => {
   const codex = BUILTIN_ADAPTERS.codex
-  const hermes = BUILTIN_ADAPTERS.hermes
   // codex：exec -i a.png -i b.png "task"
   const args = buildArgs(codex, { task: '看图', images: ['/tmp/a.png', '/tmp/b.png'] })
   assert.deepEqual(args, ['exec', '-i', '/tmp/a.png', '-i', '/tmp/b.png', '看图'])
-  // hermes：-z --image a.png "task"
-  const hArgs = buildArgs(hermes, { task: '看图', images: ['/tmp/a.png'] })
-  assert.deepEqual(hArgs, ['-z', '--image', '/tmp/a.png', '看图'])
   // 无图片时参数与旧版完全一致（回归保护）
   assert.deepEqual(buildArgs(codex, { task: '看图' }), ['exec', '看图'])
   // resume 模式（codex resume args 含 {task}）：图片同样插在任务参数前
@@ -258,7 +255,7 @@ test('dispatch: 不支持的适配器（无 image 配置）带附件 → 明确�
   })
   assert.equal(result.ok, false)
   assert.match(result.message, /不支持图片附件/)
-  assert.match(result.message, /codex|hermes|kimi/)
+  assert.match(result.message, /codex|kimi/)
   rmSync(dir, { recursive: true, force: true })
 })
 

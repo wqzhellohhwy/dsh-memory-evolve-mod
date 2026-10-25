@@ -6,7 +6,7 @@
  * 纯前端模式（前端一期验收期行为，数据不落盘到宿主）。
  *
  * 与后端契约（lib/canvas.js）：
- *   GET  /memory-evolve/api/canvas/state        → { enabled }
+ *   GET  /memory-evolve/api/canvas 的 /state 子路径 → { enabled }
  *   GET  /memory-evolve/api/canvas?sessionId=   → { nodes, rev, viewport, viewMode }
  *   POST /memory-evolve/api/canvas              → { ok, rev }（body: nodes/rev/viewport/viewMode）
  *   GET  /memory-evolve/api/canvas/file?nodeId= → 文件字节（MIME 白名单）

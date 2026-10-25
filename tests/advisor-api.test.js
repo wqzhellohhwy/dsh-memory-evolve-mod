@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { installAdvisor } from '../lib/advisor/index.js'
 import { DEFAULT_ADVISOR_SYSTEM_PROMPT } from '../lib/advisor/prompt.js'
 import { validateRuntimePatch } from '../lib/index.js'
+import { tmproot } from './_tmp.js'
 
 let seq = 0
 const nextSeq = () => seq++
@@ -132,7 +133,7 @@ function makeCtx() {
 
 /** 装好 advisor 的测试台。 */
 function makeRig(overrides = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-advisor-api-'))
+  const dir = tmproot("dsh-advisor-api-")
   const { ctx, agents, llm, listeners } = makeCtx()
   const config = {
     advisorEnabled: true,
@@ -213,8 +214,12 @@ function setupSession(rig, sessionId = 'session-1', userText = '帮我写个函�
 test('装配：启用后 agent/created 建运行时，turn/end 触发评审并 steer', async (t) => {
   const rig = rigFor(t)
   const { agent } = setupSession(rig)
-  // 等 drain
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  // 等 drain + 落盘：终态记录是异步 writeChain（先磁盘后 ring），固定 20ms 在
+  // 并发跑（--test-concurrency=4、机器满载）时偶发不够（实测 duration 73ms 仍 0 条）。
+  // 轮询到记录出现为止（上限 2s）；超时后下面的断言照旧失败，强度不变。
+  for (let i = 0; i < 200 && rig.ctrl.queryRecords({ sessionId: 'session-1' }).records.length === 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
   // 状态
   const status = rig.ctrl.status('session-1')
   assert.equal(status.effectiveEnabled, true)
@@ -375,7 +380,7 @@ test('API：错误路径（BAD_SESSION、同源 403、非法 patch）', async (t
 })
 
 test('多 fiber：single-reviewer 只装一个评审者', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-advisor-claim-'))
+  const dir = tmproot("dsh-advisor-claim-")
   const config = { advisorEnabled: true, advisorDataDir: dir, advisorProvider: null, advisorModel: null, advisorSystemPrompt: '', advisorPanelEnabled: true, advisorImmuneTurns: 0, advisorSteerSeverities: ['nit'], advisorMaxMessages: 60, advisorMaxQueued: 32, advisorCallTimeoutMs: 5000 }
   const r1 = makeCtx()
   const r2 = makeCtx()
@@ -567,7 +572,7 @@ test('四层级约束：GET/PUT /scopes + 拼接注入 + 评审会话约束随 r
   const lastCall = rig.llm.calls[rig.llm.calls.length - 1]
   assert.ok(lastCall.system.includes('### 全局约束'))
   assert.ok(lastCall.system.includes('评审意见一律用中文'))
-  assert.ok(lastCall.system.includes('### 项目约束'))
+  assert.ok(lastCall.system.includes('### 工作区约束'))
   assert.ok(lastCall.system.includes('本项目用 Vue npm 工程'))
   assert.ok(lastCall.system.includes('### 会话约束'))
   assert.ok(lastCall.system.includes('本会话盯紧边界条件'))

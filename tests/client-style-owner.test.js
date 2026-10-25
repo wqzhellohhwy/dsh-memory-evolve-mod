@@ -45,7 +45,9 @@ test('src/client 下不再有「裸注入」的 <style>（必须经过 injectOwn
   )
   assert.match(clientEntry, /injectOwnedStyle\('data-memory-evolve-css'/, '主样式必须走 injectOwnedStyle')
   const calls = clientEntry.match(/injectOwnedStyle\(/g) ?? []
-  assert.ok(calls.length >= 10, `主入口应有 >=10 处样式注入走统一入口，实际 ${calls.length}`)
+  // 阈值下限 = 当下走统一入口的注入处数（2026-10-15 删掉技能管理页签后为 9）。
+  // 新增样式注入时同步上调；下跌说明有模块的样式不再注入，别默默放过。
+  assert.ok(calls.length >= 9, `主入口应有 >=9 处样式注入走统一入口，实际 ${calls.length}`)
 
   // 画板模块保持自包含（不跨目录 import），因此允许自己 createElement，
   // 但必须在同一个函数里显式写 data-plugin。

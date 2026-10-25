@@ -28,9 +28,10 @@ import {
   BOOKMARKS_PER_SESSION_MAX,
 } from '../lib/bookmarks.js'
 import { resolveConfig, validateRuntimePatch, RUNTIME_KEYS } from '../lib/index.js'
+import { tmproot } from './_tmp.js'
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-bookmarks-test-'))
+  return tmproot("dsh-memory-bookmarks-test-")
 }
 
 /** 与 ui-settings.test.js 同款的 fake ctx。 */

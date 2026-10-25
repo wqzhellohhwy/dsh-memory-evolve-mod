@@ -19,6 +19,8 @@ import { askConfirm, askPrompt } from './ask-confirm.ts'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { TabGuideView, type GuideSection } from './TabGuideView.tsx'
+import { useToast } from './Toast.tsx'
+import { InlineError } from './InlineError.tsx'
 
 /** 宿主返回的书签形状。 */
 interface Bookmark {
@@ -203,7 +205,10 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
   const [feature, setFeature] = useState<Feature>(persistedFeature ?? 'list')
   const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(null)
   const [query, setQuery] = useState('') // 搜索关键词（label/summary 子串过滤）
-  const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null)
+  /** 一次性结果提示（右下角弹窗）。 */
+  const notify = useToast(t)
+  /** 整页加载失败：页内常驻错误 + 重试。 */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => { persistedFeature = feature }, [feature])
@@ -214,9 +219,12 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
       return
     }
     void api<{ bookmarks: Bookmark[] }>(`?sessionId=${encodeURIComponent(sessionId)}`)
-      .then((data) => setBookmarks(data.bookmarks ?? []))
+      .then((data) => {
+        setLoadError(null)
+        setBookmarks(data.bookmarks ?? [])
+      })
       .catch((error: Error) => {
-        setNotice({ kind: 'error', text: t('bookmark.error', { message: error.message }) })
+        setLoadError(t('panel.loadFailed', { message: error.message }))
         setBookmarks([])
       })
   }, [sessionId, t])
@@ -232,15 +240,15 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
 
   const onJump = (bm: Bookmark): void => {
     setBusy(true)
-    setNotice({ kind: 'info', text: t('bookmark.jumping') })
+    notify('ok', t('bookmark.jumping'))
     void jumpToAnchor(bm)
       .then((result) => {
         if (result === 'ok') {
-          setNotice({ kind: 'ok', text: t('bookmark.jump.ok', { label: bm.label }) })
+          notify('ok', t('bookmark.jump.ok', { label: bm.label }))
         } else if (result === 'no-chat') {
-          setNotice({ kind: 'error', text: t('bookmark.jump.noChat') })
+          notify('error', t('bookmark.jump.noChat'))
         } else {
-          setNotice({ kind: 'error', text: t('bookmark.jump.notFound', { label: bm.label }) })
+          notify('error', t('bookmark.jump.notFound', { label: bm.label }))
         }
       })
       .finally(() => setBusy(false))
@@ -258,10 +266,10 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
     })
       .then(() => {
         load()
-        setNotice({ kind: 'ok', text: t('bookmark.renamed') })
+        notify('ok', t('bookmark.renamed'))
       })
       .catch((error: Error) => {
-        setNotice({ kind: 'error', text: t('bookmark.error', { message: error.message }) })
+        notify('error', t('bookmark.error', { message: error.message }))
       })
       .finally(() => setBusy(false))
   }
@@ -275,10 +283,10 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
     })
       .then(() => {
         load()
-        setNotice({ kind: 'ok', text: t('bookmark.deleted') })
+        notify('ok', t('bookmark.deleted'))
       })
       .catch((error: Error) => {
-        setNotice({ kind: 'error', text: t('bookmark.error', { message: error.message }) })
+        notify('error', t('bookmark.error', { message: error.message }))
       })
       .finally(() => setBusy(false))
   }
@@ -287,7 +295,7 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
   const onFork = async (bm: Bookmark): Promise<void> => {
     if (!(await askConfirm(t('bookmark.fork.confirm', { n: String(bm.turn ?? bm.seq) })))) return
     setBusy(true)
-    setNotice({ kind: 'info', text: t('bookmark.fork.working') })
+    notify('ok', t('bookmark.fork.working'))
     void fetch('/memory-evolve/api/bookmarks/fork', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -297,13 +305,13 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
       .then((res) => res.json().catch(() => ({})) as Promise<{ sessionId?: string; error?: string }>)
       .then((data) => {
         if (typeof data.sessionId === 'string') {
-          setNotice({ kind: 'ok', text: t('bookmark.fork.ok', { id: data.sessionId }) })
+          notify('ok', t('bookmark.fork.ok', { id: data.sessionId }))
         } else {
-          setNotice({ kind: 'error', text: t('bookmark.error', { message: data.error ?? 'HTTP error' }) })
+          notify('error', t('bookmark.error', { message: data.error ?? 'HTTP error' }))
         }
       })
       .catch((error: Error) => {
-        setNotice({ kind: 'error', text: t('bookmark.error', { message: error.message }) })
+        notify('error', t('bookmark.error', { message: error.message }))
       })
       .finally(() => setBusy(false))
   }
@@ -391,8 +399,8 @@ export function BookmarksView(props: ConvViewProps & BookmarksViewProps): JSX.El
             onChange={(event) => setQuery(event.target.value)}
             aria-label={t('bookmark.search.placeholder')}
           />
-          {notice !== null && (
-            <div className={`bm-notice bm-notice-${notice.kind}`}>{notice.text}</div>
+          {loadError !== null && (
+            <InlineError text={loadError} retryText={t('panel.retry')} onRetry={load} />
           )}
           <div className="bm-list">
             {filtered === null && (

@@ -389,7 +389,6 @@
 
 .advisor-warning,
 .advisor-error,
-.advisor-notice,
 .advisor-inline-error {
   flex: none;
   font-size: 10px;
@@ -415,42 +414,6 @@
   border-radius: 8px;
   background: var(--dsw-alias-state-error-secondary);
   color: var(--dsw-alias-state-error-primary);
-}
-
-.advisor-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 8px 0;
-  padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-}
-
-.advisor-notice > span:first-child {
-  flex: 1;
-}
-
-.advisor-notice-ok {
-  border-color: var(--dsw-alias-state-success-primary);
-  background: var(--dsw-alias-state-success-tertiary);
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.advisor-notice-error {
-  border-color: var(--dsw-alias-state-error-secondary);
-  background: var(--dsw-alias-state-error-secondary);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.advisor-notice-close {
-  appearance: none;
-  padding: 0 2px;
-  border: none;
-  background: var(--dsw-alias-bg-layer-1);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
 }
 
 .advisor-loading,

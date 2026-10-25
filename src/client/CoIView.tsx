@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { askConfirm } from './ask-confirm.ts'
+import { toast } from './Toast.tsx'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -97,12 +98,6 @@ interface CoiConfig {
   coiTaskTimeoutMs: number
 }
 
-/** 行内提示（成功/失败）。 */
-interface Notice {
-  kind: 'ok' | 'error'
-  text: string
-}
-
 /* ------------------------------------------------------------------ */
 /* 内部字典（默认中文，无需语言切换 UI）                                 */
 /* ------------------------------------------------------------------ */
@@ -116,16 +111,16 @@ const DICT = {
     'guide.use.title': '怎么发起任务',
     'guide.use.desc': '三种入口，任选其一：',
     'guide.use.ai': '对 AI 说：',
-    'guide.use.aiDesc': '直接说「派给 kimi 做 XX / 让 codex 修复测试」——AI 用 de_coi_dispatch 工具发起，后台异步跑，完成后结果摘要自动写进项目日志和今日日志。',
+    'guide.use.aiDesc': '直接说「派给 kimi 做 XX / 让 codex 修复测试」——AI 用 de_coi_dispatch 工具发起，后台异步跑，完成后结果摘要自动写进工作区日志和今日日志。',
     'guide.use.slash': '终端命令：',
     'guide.use.slashDesc': '/de_coi run "任务" --coi kimi（查看全部子命令：/de_coi help）。',
     'guide.use.tab': '本 Tab：',
-    'guide.use.tabDesc': '「任务」页填适配器、任务内容、层级，可选恢复会话 / 任务模板 / 接力引用；还能勾选「注入 DSH 记忆」让外援带上你的项目约定，或附加上下文文本、带图分析；点发起，进度与输出实时可见。',
+    'guide.use.tabDesc': '「任务」页填适配器、任务内容、层级，可选恢复会话 / 任务模板 / 接力引用；还能勾选「注入 DSH 记忆」让外援带上你的工作区约定，或附加上下文文本、带图分析；点发起，进度与输出实时可见。',
     'guide.scope.title': '会话分层（谁能看到）',
     'guide.scope.desc': '任务与会话按层级归属，决定谁能看到、能否恢复：',
     'guide.scope.temp': '仅发起它的那个会话可见，一次性任务（测试适配器用这个）。',
     'guide.scope.session': '仅发起它的那个会话可见，会话内可恢复。',
-    'guide.scope.project': '该项目（相同工作目录）的所有会话可见，可挂 git 分支。',
+    'guide.scope.project': '该工作区（相同工作目录）的所有会话可见，可挂 git 分支。',
     'guide.scope.global': '所有会话可见，长期保留。',
     'guide.skill.title': '适配器与技能',
     'guide.skill.desc': '每个适配器对应一个技能（AI 的使用指南，注入模型上下文）：内置四家开箱即用；自定义 CLI 可在「适配器」页添加（含普通命令 plain-cli），填技能名与内容后 AI 即学会调用它。技能可在「技能管理」Tab 禁用，可在适配器页「技能」按钮编辑。',
@@ -134,7 +129,7 @@ const DICT = {
     'guide.tips.2': '接力链：codex 写代码 → kimi review（发起时选「接力引用」）。',
     'guide.tips.3': '重要会话记得备注（会话页点备注），恢复时按名字找。',
     'guide.tips.4': '任务结束可推送通知（配置页填通知命令，如 hermes send 推微信）。',
-    'guide.tips.5': '派活时勾选「注入 DSH 记忆」，外援会带着你的全局规则、用户偏好与本项目关键记忆干活（按分支过滤，与 DSH 注入同规则）；派活也能带图——截图直接发给外援分析（codex / kimi / hermes 支持读图，zcode 纯文本会明确拒绝）。',
+    'guide.tips.5': '派活时勾选「注入 DSH 记忆」，外援会带着你的全局规则、用户偏好与本工作区关键记忆干活（按分支过滤，与 DSH 注入同规则）；派活也能带图——截图直接发给外援分析（codex / kimi / hermes 支持读图，zcode 纯文本会明确拒绝）。',
     'guide.loop': '闭环：派任务 → 实时看进度 → 拿结果留档 → 摘要沉淀记忆 → 会话可恢复再接力。',
     tasks: '任务',
     sessions: '会话',
@@ -162,9 +157,9 @@ const DICT = {
     'launch.refNone': '（不引用）',
     'launch.submit': '发起',
     'launch.injectTracks': '注入 DSH 记忆（可选）',
-    'launch.injectTracksHint': '自主选择要带给 COI 的记忆轨（与层级 scope 无关，任何层级都可注入）：长期记忆=全局事实、用户档案=你的偏好、项目关键记忆=本工作区项目按分支过滤（不含 AGENTS.md）。内容会发给外部 COI 服务，注意隐私；留空=不注入',
+    'launch.injectTracksHint': '自主选择要带给 COI 的记忆轨（与层级 scope 无关，任何层级都可注入）：长期记忆=全局事实、用户档案=你的偏好、工作区关键记忆=本工作区按分支过滤（不含 AGENTS.md）。内容会发给外部 COI 服务，注意隐私；留空=不注入',
     'launch.ctxText': '附加上下文文本（可选）',
-    'launch.ctxTextPh': '自己拼接的上下文：如项目进展、相关日志要点…（超 32KB 自动写文件并把路径告诉 COI）',
+    'launch.ctxTextPh': '自己拼接的上下文：如工作区进展、相关日志要点…（超 32KB 自动写文件并把路径告诉 COI）',
     'launch.needPrompt': '任务内容不能为空',
     'launch.ok': '已发起',
     'tasks.empty': '暂无任务',
@@ -287,8 +282,9 @@ const DICT = {
     'config.saved': '已保存',
     'scope.temporary': '临时',
     'scope.session': '会话',
-    'scope.project': '项目',
+    'scope.project': '工作区',
     'scope.global': '全局',
+    'toast.close': '关闭提示',
   },
   en: {
     tab: 'CLI Dispatch',
@@ -298,16 +294,16 @@ const DICT = {
     'guide.use.title': 'How to launch a task',
     'guide.use.desc': 'Three entries, pick any:',
     'guide.use.ai': 'Tell the AI:',
-    'guide.use.aiDesc': 'Say "dispatch XX to kimi / have codex fix the tests" — the AI launches it via de_coi_dispatch, it runs in the background, and on completion the summary is automatically written into the project log and daily log.',
+    'guide.use.aiDesc': 'Say "dispatch XX to kimi / have codex fix the tests" — the AI launches it via de_coi_dispatch, it runs in the background, and on completion the summary is automatically written into the workspace log and daily log.',
     'guide.use.slash': 'Terminal command:',
     'guide.use.slashDesc': '/de_coi run "task" --coi kimi (see all subcommands: /de_coi help).',
     'guide.use.tab': 'This tab:',
-    'guide.use.tabDesc': 'In the Tasks page fill in the adapter, prompt and scope; optionally resume a session / use a template / chain a reference task; you can also tick "inject DSH memory" so the helper carries your project conventions, attach context text or images; hit launch and watch progress and output live.',
+    'guide.use.tabDesc': 'In the Tasks page fill in the adapter, prompt and scope; optionally resume a session / use a template / chain a reference task; you can also tick "inject DSH memory" so the helper carries your workspace conventions, attach context text or images; hit launch and watch progress and output live.',
     'guide.scope.title': 'Session tiers (who can see)',
     'guide.scope.desc': 'Tasks and sessions belong to a tier, which decides who can see and resume them:',
     'guide.scope.temp': 'Visible only to the launching session; one-off (use for testing an adapter).',
     'guide.scope.session': 'Visible only to the launching session; resumable within it.',
-    'guide.scope.project': 'Visible to all sessions of the project (same working directory); can carry a git branch.',
+    'guide.scope.project': 'Visible to all sessions of the workspace (same working directory); can carry a git branch.',
     'guide.scope.global': 'Visible to every session; kept long-term.',
     'guide.skill.title': 'Adapters & skills',
     'guide.skill.desc': 'Every adapter maps to a skill (the AI usage guide, injected into the model context): the four built-ins work out of the box; custom CLIs can be added in the Adapters page (plain-cli included) — fill the skill name and content and the AI learns to drive it. Skills can be disabled in the Skill Manager tab and edited via the Skill button on the adapter page.',
@@ -316,7 +312,7 @@ const DICT = {
     'guide.tips.2': 'Chaining: codex writes code → kimi reviews (pick "reference task" when launching).',
     'guide.tips.3': 'Note important sessions (the note button in the sessions page) so you can find them by name when resuming.',
     'guide.tips.4': 'Tasks can push a notification on completion (set the notify command in the config page, e.g. hermes send to WeChat).',
-    'guide.tips.5': 'Tick "inject DSH memory" when dispatching and the helper works with your global rules, profile and this project key facts (branch-filtered, same rules as DSH injection); tasks can also carry images — send a screenshot for analysis (codex / kimi / hermes read images; zcode is text-only and will refuse clearly).',
+    'guide.tips.5': 'Tick "inject DSH memory" when dispatching and the helper works with your global rules, profile and this workspace key facts (branch-filtered, same rules as DSH injection); tasks can also carry images — send a screenshot for analysis (codex / kimi / hermes read images; zcode is text-only and will refuse clearly).',
     'guide.loop': 'The loop: dispatch → watch progress live → archive the result → distill the summary into memory → resume and chain the session.',
     tasks: 'Tasks',
     sessions: 'Sessions',
@@ -344,9 +340,9 @@ const DICT = {
     'launch.refNone': '(none)',
     'launch.submit': 'Launch',
     'launch.injectTracks': 'Inject DSH memory (optional)',
-    'launch.injectTracksHint': 'Pick which memory tracks to hand to the COI (independent of scope — any tier can inject): long-term memory=global facts, user profile=your preferences, project key=this workspace\'s key facts (branch-filtered; no AGENTS.md). Content is sent to external COI services — mind privacy; empty = no injection',
+    'launch.injectTracksHint': 'Pick which memory tracks to hand to the COI (independent of scope — any tier can inject): long-term memory=global facts, user profile=your preferences, workspace key=this workspace\'s key facts (branch-filtered; no AGENTS.md). Content is sent to external COI services — mind privacy; empty = no injection',
     'launch.ctxText': 'Extra context text (optional)',
-    'launch.ctxTextPh': 'Your own context: project progress, log highlights… (over 32KB it is written to a file and the path is given to the COI)',
+    'launch.ctxTextPh': 'Your own context: workspace progress, log highlights… (over 32KB it is written to a file and the path is given to the COI)',
     'launch.needPrompt': 'Prompt must not be empty',
     'launch.ok': 'Launched',
     'tasks.empty': 'No tasks yet',
@@ -469,8 +465,9 @@ const DICT = {
     'config.saved': 'Saved',
     'scope.temporary': 'temporary',
     'scope.session': 'session',
-    'scope.project': 'project',
+    'scope.project': 'workspace',
     'scope.global': 'global',
+    'toast.close': 'Dismiss',
   },
 } as const
 
@@ -482,6 +479,11 @@ const LANG: keyof typeof DICT = (typeof navigator !== 'undefined' && navigator.l
 /** 字典查询：当前语言 → en 兜底 → key 本身。 */
 function t(key: DictKey): string {
   return DICT[LANG][key] ?? DICT.en[key] ?? key
+}
+
+/** 一次性结果提示（右下角弹窗）：本组件不走 slot 的 Translate，用内部字典给关闭标题。 */
+function pushToast(kind: 'ok' | 'error', text: string): void {
+  toast(kind, text, t('toast.close'))
 }
 
 /* ------------------------------------------------------------------ */
@@ -595,11 +597,6 @@ const TASK_LIMIT = 20
 /* ------------------------------------------------------------------ */
 /* 通用小件                                                             */
 /* ------------------------------------------------------------------ */
-
-function NoticeLine(props: { notice: Notice | null }): JSX.Element | null {
-  if (props.notice === null) return null
-  return <div className={`coi-notice coi-notice-${props.notice.kind}`}>{props.notice.text}</div>
-}
 
 function ErrorLine(props: { error: string | null }): JSX.Element | null {
   if (props.error === null) return null
@@ -724,7 +721,6 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
 
   // 发起表单
   const [adapterId, setAdapterId] = useState('kimi')
@@ -780,7 +776,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       const data = await fetchJson<{ ok: boolean; task: CoiTask }>(`/tasks/${encodeURIComponent(id)}`)
       setDetail(data.task)
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }, [])
 
@@ -791,15 +787,15 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
     try {
       const res = await deleteJson<{ ok: boolean; message?: string }>(`/tasks/${encodeURIComponent(id)}`)
       if (res.ok !== true) {
-        setNotice({ kind: 'error', text: msgOr(res.message, '删除失败') })
+        pushToast('error', msgOr(res.message, '删除失败'))
         return
       }
       setSelectedId(null)
       setDetail(null)
       void loadTasks()
-      setNotice({ kind: 'ok', text: res.message ?? '已删除' })
+      pushToast('ok', res.message ?? '已删除')
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -888,7 +884,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
 
   const launch = async (): Promise<void> => {
     if (prompt.trim() === '') {
-      setNotice({ kind: 'error', text: t('launch.needPrompt') })
+      pushToast('error', t('launch.needPrompt'))
       return
     }
     setLaunching(true)
@@ -903,7 +899,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
         injectTracks: injectTracks.length > 0 ? injectTracks : undefined,
         contextText: ctxText.trim() === '' ? undefined : ctxText,
       })
-      setNotice({ kind: 'ok', text: `${t('launch.ok')}${res.taskId !== undefined ? `：${res.taskId}` : ''}` })
+      pushToast('ok', `${t('launch.ok')}${res.taskId !== undefined ? `：${res.taskId}` : ''}`)
       setPrompt('')
       setTemplateId('')
       setRefTaskId('')
@@ -911,7 +907,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       // 通知宿主层重查 COI Tab 红点（新任务立即可见，不等 30s 轮询）。
       window.dispatchEvent(new CustomEvent('dsh-memory-evolve:badge-change'))
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     } finally {
       setLaunching(false)
     }
@@ -925,7 +921,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       // 会返回确认提示而不是直接终止（跳过它会绕过安全检查）；被拒时
       // 把服务端提示原样给用户二次确认后再带 force 重发（catch 分支）。
       await postJson(`/tasks/${encodeURIComponent(detail.id)}/cancel`, { force: false })
-      setNotice({ kind: 'ok', text: t('tasks.killed') })
+      pushToast('ok', t('tasks.killed'))
       void loadTasks()
       void loadDetail(detail.id)
     } catch (err) {
@@ -934,11 +930,11 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       if (await askConfirm(msg)) {
         try {
           await postJson(`/tasks/${encodeURIComponent(detail.id)}/cancel`, { force: true })
-          setNotice({ kind: 'ok', text: t('tasks.killed') })
+          pushToast('ok', t('tasks.killed'))
           void loadTasks()
           void loadDetail(detail.id)
         } catch (err2) {
-          setNotice({ kind: 'error', text: errText(err2) })
+          pushToast('error', errText(err2))
         }
       }
     }
@@ -948,10 +944,10 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
     if (detail === null) return
     try {
       const res = await postJson<{ ok: boolean; taskId?: string; message?: string }>(`/tasks/${encodeURIComponent(detail.id)}/retry`)
-      setNotice({ kind: 'ok', text: res.message ?? `${t('tasks.retried')}${res.taskId !== undefined ? `：${res.taskId}` : ''}` })
+      pushToast('ok', res.message ?? `${t('tasks.retried')}${res.taskId !== undefined ? `：${res.taskId}` : ''}`)
       void loadTasks()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -961,7 +957,7 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setNotice({ kind: 'error', text: t('tasks.copyFail') })
+      pushToast('error', t('tasks.copyFail'))
     }
   }
 
@@ -1103,7 +1099,6 @@ function TasksPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
         )}
       </div>
 
-      <NoticeLine notice={notice} />
 
       <div className="coi-task-toolbar">
         <input
@@ -1295,7 +1290,6 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
   const visQs = (dsSessionId ?? '') !== '' ? `&sessionId=${encodeURIComponent(String(dsSessionId))}` : ''
   const [sessions, setSessions] = useState<CoiSession[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
   const [scopeFilter, setScopeFilter] = useState('')
   const [q, setQ] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
@@ -1322,10 +1316,10 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
     try {
       await postJson('/sessions/note', { id, note: noteDraft })
       setEditId(null)
-      setNotice({ kind: 'ok', text: t('config.saved') })
+      pushToast('ok', t('config.saved'))
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1335,7 +1329,7 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
       await deleteJson(`/sessions/${encodeURIComponent(id)}`)
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1356,7 +1350,6 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
         />
         <button type="button" className="coi-btn" onClick={() => void load()}>{t('refresh')}</button>
       </div>
-      <NoticeLine notice={notice} />
       <ErrorLine error={error} />
       {sessions === null && error === null && <div className="coi-muted coi-pad">{t('loading')}</div>}
       {sessions !== null && sessions.length === 0 && <div className="coi-muted coi-pad">{t('sessions.empty')}</div>}
@@ -1415,7 +1408,6 @@ function SessionsPane({ dsSessionId }: { dsSessionId?: string }): JSX.Element {
 function AdaptersPane(): JSX.Element {
   const [adapters, setAdapters] = useState<Adapter[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
   const [guideOpen, setGuideOpen] = useState<string | null>(null)
   // 技能编辑（指南 = 关联技能的 SKILL.md）
   const [skillEditId, setSkillEditId] = useState<string | null>(null)
@@ -1463,9 +1455,9 @@ function AdaptersPane(): JSX.Element {
   const test = async (id: string): Promise<void> => {
     try {
       const res = await postJson<{ ok: boolean; taskId?: string; message?: string }>('/adapters/test', { id })
-      setNotice({ kind: 'ok', text: `${t('adapters.testOk')}${res.taskId !== undefined ? `：${res.taskId}` : ''}${res.message !== undefined ? `（${res.message}）` : ''}` })
+      pushToast('ok', `${t('adapters.testOk')}${res.taskId !== undefined ? `：${res.taskId}` : ''}${res.message !== undefined ? `（${res.message}）` : ''}`)
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1474,12 +1466,12 @@ function AdaptersPane(): JSX.Element {
     try {
       const res = await deleteJson<{ ok: boolean; message?: string }>(`/adapters/${encodeURIComponent(id)}`)
       if (res.ok === false) {
-        setNotice({ kind: 'error', text: msgOr(res.message, 'ok:false') })
+        pushToast('error', msgOr(res.message, 'ok:false'))
         return
       }
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1490,13 +1482,13 @@ function AdaptersPane(): JSX.Element {
       const def = { ...a, useCase: useCaseDraft.trim() }
       const res = await postJson<{ ok: boolean; message?: string }>('/adapters', { def })
       if (res.ok !== true) {
-        setNotice({ kind: 'error', text: msgOr(res.message, '保存失败') })
+        pushToast('error', msgOr(res.message, '保存失败'))
         return
       }
       setUseCaseEditId(null)
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1505,12 +1497,12 @@ function AdaptersPane(): JSX.Element {
       const next = a.enabled === false
       const res = await postJson<{ ok: boolean; message?: string }>(`/adapters/${encodeURIComponent(a.id)}/enabled`, { enabled: next })
       if (res.ok !== true) {
-        setNotice({ kind: 'error', text: msgOr(res.message, '操作失败') })
+        pushToast('error', msgOr(res.message, '操作失败'))
         return
       }
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1547,7 +1539,7 @@ function AdaptersPane(): JSX.Element {
         setSkillError(msgOr(res.message, '保存失败'))
         return
       }
-      setNotice({ kind: 'ok', text: res.message ?? t('adapters.skillSaved') })
+      pushToast('ok', res.message ?? t('adapters.skillSaved'))
       setSkillEditId(null)
       setSkillContent('')
     } catch (err) {
@@ -1562,7 +1554,7 @@ function AdaptersPane(): JSX.Element {
     if (fType === 'ai-cli') {
       const resumeEmpty = fResumeKind === 'flag' ? fResumeFlag.trim() === '' : fResumeArgs.trim() === ''
       if (resumeEmpty) {
-        setNotice({ kind: 'error', text: t('adapters.resumeMissing') })
+        pushToast('error', t('adapters.resumeMissing'))
         return
       }
     }
@@ -1591,10 +1583,10 @@ function AdaptersPane(): JSX.Element {
       const skillContent = fSkill.trim() !== '' && fSkillContent.trim() !== '' ? fSkillContent : undefined
       const res = await postJson<{ ok: boolean; message?: string; skillMessage?: string }>('/adapters', { def, skillContent })
       if (res.ok !== true) {
-        setNotice({ kind: 'error', text: msgOr(res.message, '保存失败') })
+        pushToast('error', msgOr(res.message, '保存失败'))
         return
       }
-      setNotice({ kind: 'ok', text: res.skillMessage !== undefined ? res.skillMessage : t('config.saved') })
+      pushToast('ok', res.skillMessage !== undefined ? res.skillMessage : t('config.saved'))
       setFId('')
       setFName('')
       setFBinary('')
@@ -1608,7 +1600,7 @@ function AdaptersPane(): JSX.Element {
       setFExtractRegex('')
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     } finally {
       setAdding(false)
     }
@@ -1616,7 +1608,6 @@ function AdaptersPane(): JSX.Element {
 
   return (
     <div className="coi-pane">
-      <NoticeLine notice={notice} />
       <ErrorLine error={error} />
       {adapters === null && error === null && <div className="coi-muted coi-pad">{t('loading')}</div>}
       <div className="coi-cards">
@@ -1861,7 +1852,6 @@ function TemplatesPane(): JSX.Element {
   const [templates, setTemplates] = useState<CoiTemplate[] | null>(null)
   const [adapters, setAdapters] = useState<Adapter[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
 
   const [fId, setFId] = useState('')
   const [fName, setFName] = useState('')
@@ -1888,7 +1878,7 @@ function TemplatesPane(): JSX.Element {
 
   const remove = async (id: string): Promise<void> => {
     if (BUILTIN_TEMPLATE_IDS.has(id)) {
-      setNotice({ kind: 'error', text: t('templates.builtinKeep') })
+      pushToast('error', t('templates.builtinKeep'))
       return
     }
     if (!(await askConfirm(t('templates.confirmDelete')))) return
@@ -1896,7 +1886,7 @@ function TemplatesPane(): JSX.Element {
       await deleteJson(`/templates/${encodeURIComponent(id)}`)
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     }
   }
 
@@ -1907,14 +1897,14 @@ function TemplatesPane(): JSX.Element {
       if (fId.trim() !== '') def.id = fId.trim()
       if (fAdapterId !== '') def.adapterId = fAdapterId
       await postJson('/templates', { def })
-      setNotice({ kind: 'ok', text: t('config.saved') })
+      pushToast('ok', t('config.saved'))
       setFId('')
       setFName('')
       setFPrompt('')
       setFAdapterId('')
       void load()
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     } finally {
       setAdding(false)
     }
@@ -1922,7 +1912,6 @@ function TemplatesPane(): JSX.Element {
 
   return (
     <div className="coi-pane">
-      <NoticeLine notice={notice} />
       <ErrorLine error={error} />
       {templates === null && error === null && <div className="coi-muted coi-pad">{t('loading')}</div>}
       {templates !== null && templates.length === 0 && <div className="coi-muted coi-pad">{t('templates.empty')}</div>}
@@ -2049,7 +2038,6 @@ function StatsPane(): JSX.Element {
 function ConfigPane(): JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
   const [notify, setNotify] = useState('')
   const [retention, setRetention] = useState('')
   const [timeoutH, setTimeoutH] = useState('')
@@ -2083,9 +2071,9 @@ function ConfigPane(): JSX.Element {
         patch.coiTaskTimeoutMs = totalMinutes * 60000
       }
       await postJson('/config', { patch })
-      setNotice({ kind: 'ok', text: t('config.saved') })
+      pushToast('ok', t('config.saved'))
     } catch (err) {
-      setNotice({ kind: 'error', text: errText(err) })
+      pushToast('error', errText(err))
     } finally {
       setSaving(false)
     }
@@ -2093,7 +2081,6 @@ function ConfigPane(): JSX.Element {
 
   return (
     <div className="coi-pane">
-      <NoticeLine notice={notice} />
       <ErrorLine error={error} />
       {!loaded && error === null && <div className="coi-muted coi-pad">{t('loading')}</div>}
       {loaded && (

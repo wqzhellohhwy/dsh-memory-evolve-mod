@@ -447,25 +447,6 @@
 }
 
 /* ---- 提示 ---- */
-.coi-notice {
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.coi-notice-ok {
-  background: var(--dsw-alias-state-success-tertiary);
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.coi-notice-error {
-  /* 背景 error-secondary 与文字 error-primary 在暗色主题下同色（均 red-400），
-     必须用跨主题固定的深红做文字色，否则文字不可见（曾表现为"空红框"）。 */
-  background: var(--dsw-alias-state-error-secondary);
-  color: var(--dsw-static-red-900);
-}
-
 .coi-error {
   padding: 6px 10px;
   border-radius: 6px;

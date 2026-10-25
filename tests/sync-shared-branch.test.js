@@ -31,6 +31,7 @@ import { resolveProjectId } from '../lib/sync/identity.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 function gitAvailable() {
@@ -42,7 +43,7 @@ function gitAvailable() {
 }
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-shared-branch-'))
+  return tmproot("dsh-shared-branch-")
 }
 
 function clean(dir) {
@@ -79,7 +80,7 @@ function makeBare(root, name = 'bare.git') {
 /** 往裸仓库推一个带 PROVENANCE 的分支（模拟远端已有记忆：老单项目 main
  *  或共享仓库里其他项目的分支）。 */
 function seedBranch(bare, branch, projectId, displayName = 'seed') {
-  const seed = mkdtempSync(join(tmpdir(), 'dsh-sync-seed-'))
+  const seed = tmproot("dsh-sync-seed-")
   try {
     git(seed, ['init', '-q', '-b', 'main'])
     const prov = `${JSON.stringify({ projectId, displayName, version: 1, remoteBranch: branch, enabled: true, tracks: { project: true } })}\n`
@@ -94,7 +95,7 @@ function seedBranch(bare, branch, projectId, displayName = 'seed') {
 
 /** 往裸仓库推一个**无 PROVENANCE** 的 main（仓库默认分支/其他用途）。 */
 function seedPlainMain(bare) {
-  const seed = mkdtempSync(join(tmpdir(), 'dsh-sync-seed-'))
+  const seed = tmproot("dsh-sync-seed-")
   try {
     git(seed, ['init', '-q', '-b', 'main'])
     writeFileSync(join(seed, 'README.md'), 'default branch\n')

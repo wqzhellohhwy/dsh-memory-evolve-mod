@@ -14,11 +14,12 @@ import { SessionOrch, SessionOrchStore, sessionToolDefinition, installSession } 
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 import { setLocale } from '../lib/i18n.js'
+import { tmproot } from './_tmp.js'
 setLocale('zh')
 
 /** 独立临时目录（每个测试隔离）。 */
 function tempDir() {
-  return join(tmpdir(), `dsh-session-orch-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}`)
+  return tmproot('dsh-session-orch-test-')
 }
 
 /** 构造一个 fake agent（记录 followup 收到的消息，status 可切换）。 */

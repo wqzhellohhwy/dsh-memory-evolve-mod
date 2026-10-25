@@ -82,7 +82,7 @@ function placeNear(nodes: CanvasNode[], type: CanvasNodeType, preferX: number, p
 
 export function CanvasView(props: ConvViewProps & CanvasViewProps): JSX.Element {
   // ⚠️ 2026-08-14：画板**只走后端**——Tab 能出现即 canvasEnabled 已开
-  // （前端 index.ts 探测 /canvas/state 后才注册 Tab），不再有纯前端
+  // （前端 index.ts 读能力表 canvas 为真后才注册 Tab），不再有纯前端
   // localStorage 降级模式（一期验收期行为，用户拍板取消：开=后端同步，
   // 关=整个画板不可见）。
   const backendReadyRef = useRef(false)
@@ -634,10 +634,10 @@ export function CanvasView(props: ConvViewProps & CanvasViewProps): JSX.Element 
               本会话
             </button>
             <button type="button" className={viewMode === 'project' ? 'cg-on' : ''} onClick={() => changeViewMode('project')}>
-              本项目
+              本工作区
             </button>
             <button type="button" className={viewMode === 'global' ? 'cg-on' : ''} onClick={() => changeViewMode('global')}>
-              所有项目
+              所有工作区
             </button>
           </div>
         </div>
@@ -679,7 +679,7 @@ export function CanvasView(props: ConvViewProps & CanvasViewProps): JSX.Element 
         <span className="cg-meta">
           {visibleNodes.length}/{nodes.length} 张
           {searchActive ? ` · 命中 ${matchIds.size}` : ''}
-          {' · '}{viewMode === 'session' ? '本会话' : viewMode === 'project' ? currentProjectLabel : '所有项目'}
+          {' · '}{viewMode === 'session' ? '本会话' : viewMode === 'project' ? currentProjectLabel : '所有工作区'}
           {backendReady ? (
             syncState === 'conflict' ? ' · ⚠️ 冲突，请刷新'
               : syncState === 'saving' ? ' · 保存中'

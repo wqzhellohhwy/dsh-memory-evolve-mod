@@ -33,6 +33,8 @@ export interface AdvisorPanelProps {
   store: AdvisorSessionStore
   snapshot: AdvisorStoreSnapshot
   onCollapse: () => void
+  /** 面板主体固定中文；ended 等少数提示走 locale（缺省回落中文）。 */
+  t?: Translate
 }
 
 type PanelTab = 'scopes' | 'live' | 'history' | 'settings'
@@ -335,7 +337,7 @@ export function AdvisorHost(props: AdvisorHostProps): JSX.Element {
 
   const portal = typeof document === 'undefined' ? null : createPortal(
     expanded ? (
-      <AdvisorPanel store={store} snapshot={snapshot} onCollapse={toggle} />
+      <AdvisorPanel store={store} snapshot={snapshot} onCollapse={toggle} t={props.t} />
     ) : panelEnabled ? (
       // 2026-08-14 用户反馈：「显示悬浮胶囊」开关开启时，胶囊应常驻显示
       // （作为打开面板的入口 + 评审状态指示灯），不再因「本会话未启用评审」
@@ -391,7 +393,7 @@ export function AdvisorHost(props: AdvisorHostProps): JSX.Element {
 }
 
 /** 面板本体：Header、状态条、实时/历史主区、指令区、设置 disclosure。 */
-export function AdvisorPanel({ store, snapshot, onCollapse }: AdvisorPanelProps): JSX.Element {
+export function AdvisorPanel({ store, snapshot, onCollapse, t }: AdvisorPanelProps): JSX.Element {
   const [tab, setTab] = useState<PanelTab>('live')
   const [instruction, setInstruction] = useState('')
   const [pendingOpen, setPendingOpen] = useState(true)
@@ -551,12 +553,6 @@ export function AdvisorPanel({ store, snapshot, onCollapse }: AdvisorPanelProps)
       {snapshot.statusError !== null && (
         <ErrorNotice text={`状态加载失败：${snapshot.statusError}`} onRetry={() => void store.refreshStatus()} />
       )}
-      {snapshot.notice !== null && (
-        <div className={`advisor-notice advisor-notice-${snapshot.notice.kind}`} role="status">
-          <span>{snapshot.notice.text}</span>
-          <button type="button" className="advisor-notice-close" onClick={() => store.clearNotice()} aria-label="关闭提示">×</button>
-        </div>
-      )}
 
       <div className="advisor-tabs" role="tablist" aria-label="评审数据视图">
         {/* 2026-08-12 用户拍板：约束 Tab 放最前——对本会话评审员的层级约束 */}
@@ -601,7 +597,7 @@ export function AdvisorPanel({ store, snapshot, onCollapse }: AdvisorPanelProps)
 
       {tab === 'scopes' ? (
         <ScopesErrorBoundary>
-          <ScopesTab store={store} snapshot={snapshot} />
+          <ScopesTab store={store} snapshot={snapshot} t={t} />
         </ScopesErrorBoundary>
       ) : tab === 'live' ? (
         /* 2026-08-12 用户反馈：指令区（发指令/新建评审会话）只在实时 tab 显示 */
@@ -941,14 +937,16 @@ class ScopesErrorBoundary extends Component<{ children: ReactNode }, { failed: s
  * 下次评审立即生效（后端动态拼接，无需重建）。
  * 生命周期：评审会话约束随「新建评审会话」清空；会话/项目约束持久化。
  */
-function ScopesTab({ store, snapshot }: {
+function ScopesTab({ store, snapshot, t }: {
   store: AdvisorSessionStore
   snapshot: AdvisorStoreSnapshot
+  t?: Translate
 }): JSX.Element {
   const [draft, setDraft] = useState<AdvisorScopes | null>(null)
 
   useEffect(() => {
-    if (snapshot.scopes === null) return
+    // scopes 被清空（会话 ended / 重置）时同步清草稿，否则旧对象会让页面继续显示可编辑表单。
+    if (snapshot.scopes === null) { setDraft(null); return }
     setDraft({
       global: { text: snapshot.scopes.global.text },
       project: { workspace: snapshot.scopes.project.workspace, text: snapshot.scopes.project.text },
@@ -961,6 +959,9 @@ function ScopesTab({ store, snapshot }: {
     return (
       <section className="advisor-scopes" aria-label="评审员约束">
         {snapshot.scopesLoading && <LoadingBlock text="正在加载约束…" />}
+        {!snapshot.scopesLoading && snapshot.scopesError === null && snapshot.sessionEnded && (
+          <p className="advisor-scope-hint">{t?.('advisor.scopes.ended') ?? '该会话已结束，约束不可用'}</p>
+        )}
         {snapshot.scopesError !== null && (
           <ErrorNotice text={`约束加载失败：${snapshot.scopesError}`} onRetry={() => void store.refreshScopes()} />
         )}
@@ -1003,7 +1004,7 @@ function ScopesTab({ store, snapshot }: {
       <ScopeField
         label={`${LEVEL_LABEL.project}（工作区 ${draft.project.workspace ?? '未知'} 的所有会话共享）`}
         value={draft.project.text}
-        placeholder="对本项目所有会话生效…"
+        placeholder="对本工作区所有会话生效…"
         saving={snapshot.scopesSaving}
         onSave={(text) => save('project', text)}
       />
@@ -1011,9 +1012,9 @@ function ScopesTab({ store, snapshot }: {
       {/* 第 0 层：全局约束（所有项目所有会话生效）——2026-08-12 用户拍板：
           系统提示词一般不改，全局约束词是日常层 */}
       <ScopeField
-        label={`${LEVEL_LABEL.global}（所有项目、所有会话都生效）`}
+        label={`${LEVEL_LABEL.global}（所有工作区、所有会话都生效）`}
         value={draft.global.text}
-        placeholder="对所有项目所有会话生效…（如：评审意见一律用中文、不要重复已提过的建议）"
+        placeholder="对所有工作区所有会话生效…（如：评审意见一律用中文、不要重复已提过的建议）"
         saving={snapshot.scopesSaving}
         onSave={(text) => save('global', text)}
       />

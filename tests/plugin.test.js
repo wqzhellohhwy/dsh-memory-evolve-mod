@@ -11,7 +11,8 @@ import { PLUGIN_SOURCE_KIND } from '../lib/coi/source.js'
 
 // This suite pins the legacy Chinese output contract; i18n.test.js covers English.
 setLocale('zh')
-import { MemoryStore, projectHash } from '../lib/store.js'
+import { MemoryStore, projectHash, clearGitBranchCache } from '../lib/store.js'
+import { tmproot } from './_tmp.js'
 
 /** Whether `git` is available in this environment (skip git tests otherwise). */
 function gitAvailable() {
@@ -31,8 +32,44 @@ function initGitRepo(dir) {
   return commit.status === 0 ? 'test-main' : null
 }
 
+/**
+ * v2 存储读取助手：把某个分组目录下的全部记忆文件拼成一个字符串。
+ *
+ * 2026-10-15 起「一条记忆 = 一个 md 文件」（文件名是标题、目录按类分层），
+ * 所以老测试里的 `readFileSync(join(dir, 'USER.md'))` 要改成读目录。
+ */
+function readGroup(dir, klass, groupId) {
+  const collect = (base, depth) => {
+    let out = []
+    try {
+      for (const item of readdirSync(base, { withFileTypes: true })) {
+        if (item.isDirectory()) {
+          // 日志型分组多一层日期目录（2026-10-15）
+          if (depth < 2) out = out.concat(collect(join(base, item.name), depth + 1))
+          continue
+        }
+        if (item.name.endsWith('.md')) out.push(readFileSync(join(base, item.name), 'utf8'))
+      }
+    } catch { /* 目录不存在 = 空 */ }
+    return out
+  }
+  return collect(join(dir, klass, groupId), 0).join('\n')
+}
+
+/**
+ * 2026-10-15 起**所有分组出厂都是 `inject: false`**（用户拍板：默认都不注入，
+ * 要用再开）。需要断言"某分组内容进了快照"的用例，先显式把它打开。
+ */
+function enableInject(dir, ids) {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'groups.json'), JSON.stringify({
+    version: 2,
+    groups: ids.map((id) => ({ kind: 'memory', id, inject: true })),
+  }, null, 2))
+}
+
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'dsh-memory-plugin-test-'))
+  return tmproot("dsh-memory-plugin-test-")
 }
 
 function clean(dir) {
@@ -216,7 +253,7 @@ test('apply registers memory tool and snapshot context by default', () => {
   apply(ctx, { memoryDir: dir })
   const tool = ctx.state.tools.find((t) => t.name === 'memory')
   assert.ok(tool, 'memory tool registered')
-  assert.ok(ctx.state.tools.some((t) => t.name === 'skill_manage'), 'skill tool registered by default')
+  assert.ok(!ctx.state.tools.some((t) => t.name === 'skill_manage'), 'skill_manage 已下线（2026-10-16 用户要求），不再注册')
   assert.ok(ctx.state.contexts.some((c) => c.name === 'memory:snapshot'), 'snapshot context registered')
   assert.ok(!ctx.state.tools.some((t) => t.name === 'memory_suggest'), 'suggest tool off by default')
   assert.ok(ctx.state.commands.some((c) => c.name === 'memory_review'), 'review command registered')
@@ -274,12 +311,12 @@ test('memory tool end-to-end add/list/replace/remove', async () => {
   const replaced = await tool.execute({ action: 'replace', target: 'user', content: '用户喜欢中文简洁回答', match: '简洁回答' }, fakeExec())
   assert.equal(replaced.ok, true)
   assert.equal('entries' in replaced, false)
-  assert.equal(readFileSync(join(dir, 'USER.md'), 'utf8').includes('中文简洁回答'), true)
+  assert.equal(readGroup(dir, 'global', 'user').includes('中文简洁回答'), true)
 
   const removed = await tool.execute({ action: 'remove', target: 'user', match: '中文简洁回答' }, fakeExec())
   assert.equal(removed.ok, true)
   assert.equal('entries' in removed, false)
-  assert.equal(readFileSync(join(dir, 'USER.md'), 'utf8').trim(), '')
+  assert.equal(readGroup(dir, 'global', 'user').trim(), '')
   clean(dir)
 })
 
@@ -312,9 +349,22 @@ test('memory tool archive + archived list round-trip', async () => {
   // key 归档查询需要 cwd；给 cwd 后走项目归档文件。
   // key 轨 add 走待确认队列（不落盘），这里直接写 KEY.md 构造主轨条目。
   const keyCwd = '/proj/x'
-  const keyDir = join(dir, 'projects', projectHash(keyCwd))
+  const keyDir = join(dir, 'projects', projectHash(keyCwd), 'key')
   mkdirSync(keyDir, { recursive: true })
-  writeFileSync(join(keyDir, 'KEY.md'), '[2026-08-08] 旧的项目约定\n')
+  // v2 存储：key 分组的条目在 projects/<hash>/key/<标题>.md
+  writeFileSync(join(keyDir, '旧的项目约定.md'), [
+    '---',
+    'id: a1b2c3d4',
+    'title: 旧的项目约定',
+    'created: "2026-08-08 00:00"',
+    'group: key',
+    'class: project',
+    'seq: 1',
+    '---',
+    '',
+    '旧的项目约定',
+    '',
+  ].join('\n'))
   const noCwd = await tool.execute({ action: 'list', target: 'key', archived: true }, fakeExec())
   assert.equal(noCwd.ok, false)
   assert.match(noCwd.message, /工作目录/)
@@ -441,7 +491,7 @@ test('suggest tool appends to the queue; command approves/rejects', async () => 
   const approve = command.handler({ rawInput: 'approve 1', agent: null })
   assert.equal(approve.kind, 'success')
   assert.ok(approve.text.includes('已写入记忆'))
-  assert.ok(readFileSync(join(dir, 'USER.md'), 'utf8').includes('用户偏好晨间工作'))
+  assert.ok(readGroup(dir, 'global', 'user').includes('用户偏好晨间工作'))
   assert.equal(readFileSync(join(dir, 'SUGGESTIONS.jsonl'), 'utf8').trim(), '')
 
   // reject flow
@@ -504,8 +554,8 @@ test('memory tool layered gate: subagent project/daily writes allowed, global re
   // project write allowed
   const projectOk = await tool.execute({ action: 'add', target: 'project', content: '项目 A 的重要约定' }, subExec)
   assert.equal(projectOk.ok, true)
-  const projectFile = join(dir, 'projects', projectHash('/tmp/proj-a'), 'MEMORY.md')
-  assert.ok(readFileSync(projectFile, 'utf8').includes('项目 A 的重要约定'))
+  const projectRoot = join(dir, 'projects', projectHash('/tmp/proj-a'))
+  assert.ok(readGroup(projectRoot, 'project', '').includes('项目 A 的重要约定'))
   // key write queues for confirmation (key is an injected track, so it gets
   // the same confirmation treatment as memory/user — nothing lands in KEY.md
   // until the user approves the suggestion)
@@ -554,27 +604,28 @@ test('renderSnapshot injects key facts but keeps project and daily on-demand', a
   const config = resolveConfig({ memoryDir: dir })
   const store = new MemoryStore(config.memoryDir, config)
   const agent = { id: 'a', session: { header: { cwd: '/proj/x' } } }
+  enableInject(dir, ['key'])
   store.add('project', 'X 项目流水事实', agent)
   store.add('daily', '今天完成了 Y')
   store.add('key', 'X 项目的长期约定', agent)
   const snapshot = renderSnapshot(config, store, agent)
-  // Project log/daily content must NOT enter the runtime-context snapshot:
+  // Workspace log/daily content must NOT enter the runtime-context snapshot:
   // they change on every write, and injecting them would append a new tail
   // snapshot per turn and defeat LLM prefix caching. A stable hint keeps the
   // model aware the tracks exist (content is read on demand via the tool)
   // and requires a per-turn check for record-worthy facts.
   assert.ok(!snapshot.includes('X 项目流水事实'))
   assert.ok(!snapshot.includes('今天完成了 Y'))
-  assert.ok(!snapshot.includes('## 项目日志'))
+  assert.ok(!snapshot.includes('## 工作区日志'))
   assert.ok(!snapshot.includes('## 今日记忆'))
   // Project KEY facts ARE injected (rarely-changing long-term facts, same
   // live-read/change-detected mechanism as the global tracks).
-  assert.ok(snapshot.includes('## 本项目关键记忆'))
+  assert.ok(snapshot.includes('## 本工作区关键记忆'))
   assert.ok(snapshot.includes('X 项目的长期约定'))
   assert.ok(snapshot.includes('memory 工具 target=key'))
   // without a cwd, no key section (nothing to inject)
   const noCwd = renderSnapshot(config, store, { id: 'b', session: { header: {} } })
-  assert.ok(!noCwd.includes('## 本项目关键记忆'))
+  assert.ok(!noCwd.includes('## 本工作区关键记忆'))
   assert.ok(snapshot.includes('## 记忆 memory-evolve'))
   assert.ok(snapshot.includes('target=project'))
   // per-turn duties: one minimal checklist, text-first tool-after pattern
@@ -586,7 +637,7 @@ test('renderSnapshot injects key facts but keeps project and daily on-demand', a
   assert.ok(snapshot.includes('内容不要自带时间/日期前缀'))
   // key duty: importance-gated, never a per-turn mandate — and it goes
   // through user confirmation now (提交建议)
-  assert.ok(snapshot.includes('重要项目事实'))
+  assert.ok(snapshot.includes('重要工作区事实'))
   assert.ok(snapshot.includes('向 target=key 提交 1 条建议'))
   // issue #58：必须写明用**哪个**工具——memory_suggest 的 target 白名单里没有
   // key（见 lib/review.js），只写 "向 target=key 提交建议" 会让模型照字面选错工具。
@@ -634,6 +685,9 @@ test('issue #53: 快照段净化记忆正文的 {{...}}，防宿主段渲染器 
   store.add('key', 'settings.yaml: headers: {x-opencode-session: {{session}}}', agent)
   // 记忆里的 {{date}} 是"要记录的字面事实"，不是"待展开的模板"——不得被展开成日期
   store.add('memory', '提示词正文里可用 {{date}} 占位', agent)
+  // 出厂所有分组都不注入（2026-10-15），本用例验证的是**注入文本的净化**，
+  // 所以显式把这两个分组打开。
+  enableInject(dir, ['key', 'memory'])
   // 会话标题同样来自用户输入，可能带 {{...}}（第五参数 = ctx.sessionTitle）
   const snap = renderSnapshot(config, store, agent, undefined, '排查 {{session}} 报错')
   // 宿主 interpolate 的正则 /^\{\{([^{}]*)\}\}/：快照里不得再有可解析组，
@@ -692,7 +746,7 @@ test('renderSnapshot review section: main sessions only, when enabled, static te
   assert.ok(on.includes('无提醒则跳过，不要调用 check'), 'no per-turn check duty')
   assert.ok(!on.includes('action=check'), 'no check step in the fixed hint')
   assert.ok(on.includes('memory_suggest'))
-  assert.ok(on.includes('skill_manage'))
+  assert.ok(!on.includes('skill_manage'), 'skill_manage 已下线，审查指令不应再提它')
   assert.ok(!on.includes('本轮执行完毕'), 'completion phrase removed')
   // due warning: the snapshot itself announces an overdue review (with
   // interval + mode, so the model never has to poll the tool)
@@ -914,6 +968,9 @@ test('gitBranch resolves the current branch; gitBranchList lists branches', () =
     // inside a git worktree → the branch name
     const branch = initGitRepo(dir)
     if (branch === null) return // git too old for `git init -b`
+    // 分支查询带 3s TTL 缓存（2026-10-11 无感进入优化）：上面的「非 git」
+    // 断言已把空结果缓存下来，目录刚变成 git 仓库时必须先清缓存。
+    clearGitBranchCache(dir)
     assert.equal(gitBranch(dir), branch)
     assert.deepEqual(gitBranchList(dir), [branch])
   } finally {
@@ -930,6 +987,9 @@ test('renderSnapshot injects only KEY entries covering the current branch', () =
     const config = resolveConfig({ memoryDir: join(dir, 'memories') })
     const store = new MemoryStore(config.memoryDir, config)
     const agent = { id: 'a', session: { header: { cwd: dir } } }
+    // 出厂所有分组都不注入（2026-10-15）：本用例验证 KEY 的分支过滤，
+    // 先显式打开 key 的注入。
+    enableInject(config.memoryDir, ['key'])
     store.add('key', '适用于所有分支的事实', agent)
     store.add('key', `[branch:${branch}] 仅当前分支`, agent)
     store.add('key', '[branch:other-branch] 其他分支的约定', agent)
@@ -963,23 +1023,28 @@ test('memory tool key writes queue for confirmation; branches param survives the
   assert.equal(added.ok, true)
   assert.ok(added.message.includes('待确认'))
   assert.equal('queued' in added, false, 'queued must not leak into the output schema')
-  const keyFile = join(dir, 'projects', projectHash('/proj/g'), 'KEY.md')
-  assert.equal(existsSync(keyFile), false, 'key write must not land before confirmation')
+  // v2：key 分组的条目落在 projects/<hash>/key/<标题>.md
+  const keyDir = join(dir, 'projects', projectHash('/proj/g'), 'key')
+  assert.equal(existsSync(keyDir), false, 'key write must not land before confirmation')
   const queuedText = readFileSync(join(dir, 'SUGGESTIONS.jsonl'), 'utf8')
   assert.ok(queuedText.includes('main 分支的构建约定'))
   assert.ok(queuedText.includes('[branch:main]'))
   // add without branches → untagged suggestion
   await tool.execute({ action: 'add', target: 'key', content: '通用约定' }, exec('k2'))
-  // user confirms both → they land in KEY.md (with the branch tag intact)
+  // user confirms both → they land in the key group (with the branch tag intact)
   const { approveSuggestions } = await import('../lib/review.js')
   const { SuggestionQueue } = await import('../lib/store.js')
   const { TodoStore } = await import('../lib/todo.js')
   const queue = new SuggestionQueue(join(dir, 'SUGGESTIONS.jsonl'))
   const report = approveSuggestions(new MemoryStore(dir), new TodoStore(dir), queue, [1, 2], undefined)
   assert.equal(report.remaining, 0)
-  const entry = storeEntries(keyFile)
-  assert.match(entry[0], /^\[\d{4}-\d{2}-\d{2}\] \[branch:main\] main 分支的构建约定$/)
-  assert.match(entry[1], /^\[\d{4}-\d{2}-\d{2}\] 通用约定$/)
+  const shards = readdirSync(keyDir)
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => readFileSync(join(keyDir, name), 'utf8'))
+  const branchShard = shards.find((text) => text.includes('main 分支的构建约定'))
+  assert.ok(branchShard !== undefined, '带 branch 的条目应落在 key 分组')
+  assert.ok(/branches:\s*\[?main\]?/.test(branchShard), 'branch 标记必须保留（frontmatter）')
+  assert.ok(shards.some((text) => text.includes('通用约定')), '无分支标记的条目也要落盘')
   // list with branch filter: untagged + matching tag
   const listed = await tool.execute({ action: 'list', target: 'key', branch: 'main' }, exec('k3'))
   assert.equal(listed.entries.length, 2)
@@ -1007,8 +1072,9 @@ test('resolveRevealTarget falls back to containing directories for missing files
     assert.equal(resolveRevealTarget(config, 'agentsFile'), dir)
     // Missing skill dir → open its parent.
     assert.equal(resolveRevealTarget(config, 'skillDir'), dirname(config.skillDir))
-    // Missing memory file → open the memory dir.
-    assert.equal(resolveRevealTarget(config, 'memoryFile'), dir)
+    // Missing memory dir → create + open the group directory (v2：一条记忆一个
+    // md，入口给的是分组目录而不是旧的 MEMORY.md 单文件)。
+    assert.equal(resolveRevealTarget(config, 'memoryFile'), join(dir, 'global', 'memory'))
     assert.equal(resolveRevealTarget(config, 'nope'), undefined)
     assert.equal(resolveRevealTarget(config, '/etc'), undefined)
   } finally {
@@ -1032,7 +1098,7 @@ test('resolveRevealTarget creates plugin-owned storage dirs on demand', () => {
     assert.ok(existsSync(daily), 'daily dir created')
     const projects = resolveRevealTarget(config, 'projectsDir')
     assert.ok(existsSync(projects), 'projects dir created')
-    assert.equal(resolveRevealTarget(config, 'userFile'), fresh)
+    assert.equal(resolveRevealTarget(config, 'userFile'), join(fresh, 'global', 'user'))
   } finally {
     clean(dir)
   }
@@ -1077,7 +1143,7 @@ test('reviewMode gates subagent global writes: suggest refuses, auto approves', 
   const autoTool = autoCtx.state.tools.find((t) => t.name === 'memory')
   const result = await autoTool.execute({ action: 'add', target: 'memory', content: '自动模式的全局事实' }, subExec)
   assert.equal(result.ok, true)
-  assert.ok(readFileSync(join(dir, 'MEMORY.md'), 'utf8').includes('自动模式的全局事实'))
+  assert.ok(readGroup(dir, 'global', 'memory').includes('自动模式的全局事实'))
   assert.equal(approvals.length, 1)
   clean(dir)
 })
@@ -1179,7 +1245,7 @@ test('systemPrompt context duplicate registration is tolerated (issue #23 idempo
   })
   apply(ctx, { memoryDir: dir })
   assert.ok(ctx.state.tools.some((t) => t.name === 'memory'), 'memory tool still registered after duplicate guard')
-  assert.ok(ctx.state.tools.some((t) => t.name === 'skill_manage'), 'skill tool still registered after duplicate guard')
+  assert.ok(!ctx.state.tools.some((t) => t.name === 'skill_manage'), 'skill_manage 已下线，重复注册守卫后仍不应出现')
   clean(dir)
 
   // 场景 2：prompt:injections 重复（prompts 模块开启时同款保护）
@@ -1232,7 +1298,7 @@ test('issue #58：coiEnabled=false 时 apply() 仍然同步内置技能', () => 
       installed.includes('memory-consolidate'),
       `coiEnabled=false 也必须同步内置技能（旧实现下一个都不会有），实际：${JSON.stringify(installed)}`,
     )
-    assert.equal(installed.length, 5, '五个内置技能都应落盘')
+    assert.equal(installed.length, 4, '四个内置技能都应落盘')
   } finally {
     clean(dir)
   }
